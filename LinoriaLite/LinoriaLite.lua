@@ -689,7 +689,7 @@ ThemeMap = {TextColor3 = "TextMuted"}
             Position = UDim2.new(0, BoxOutline.AbsolutePosition.X, 0, BoxOutline.AbsolutePosition.Y + 21),
             BorderSizePixel = 0,
             Visible = false,
-            ZIndex = 10,
+            ZIndex = 5000,
             ClipsDescendants = true,
 ThemeMap = {BackgroundColor3 = "OutlineColor"}
         })
@@ -699,7 +699,7 @@ ThemeMap = {BackgroundColor3 = "OutlineColor"}
             Position = UDim2.new(0, 1, 0, 1),
             Size = UDim2.new(1, -2, 1, -2),
             BorderSizePixel = 0,
-            ZIndex = 10,
+            ZIndex = 5000,
 ThemeMap = {BackgroundColor3 = "InlineColor"}
         })
         local OptsBg = Create("Frame", {
@@ -708,7 +708,7 @@ ThemeMap = {BackgroundColor3 = "InlineColor"}
             Position = UDim2.new(0, 1, 0, 1),
             Size = UDim2.new(1, -2, 1, -2),
             BorderSizePixel = 0,
-            ZIndex = 10,
+            ZIndex = 5000,
 ThemeMap = {BackgroundColor3 = "GroupBoxColor"}
         })
         
@@ -758,7 +758,7 @@ ThemeMap = {BackgroundColor3 = "GroupBoxColor"}
                     TextColor3 = (opt == selected) and Library.Theme.AccentColor or Library.Theme.TextColor,
                     TextSize = 12,
                     TextXAlignment = Enum.TextXAlignment.Left,
-                    ZIndex = 11,
+                    ZIndex = 5005,
 ThemeMap = {BackgroundColor3 = "GroupBoxColor"}
                 })
                 
@@ -946,7 +946,7 @@ ThemeMap = {TextColor3 = "TextMuted"}
             Position = UDim2.new(0, BoxOutline.AbsolutePosition.X, 0, BoxOutline.AbsolutePosition.Y + 21),
             BorderSizePixel = 0,
             Visible = false,
-            ZIndex = 10,
+            ZIndex = 5000,
             ClipsDescendants = true,
 ThemeMap = {BackgroundColor3 = "OutlineColor"}
         })
@@ -956,7 +956,7 @@ ThemeMap = {BackgroundColor3 = "OutlineColor"}
             Position = UDim2.new(0, 1, 0, 1),
             Size = UDim2.new(1, -2, 1, -2),
             BorderSizePixel = 0,
-            ZIndex = 10,
+            ZIndex = 5000,
 ThemeMap = {BackgroundColor3 = "InlineColor"}
         })
         local OptsBg = Create("Frame", {
@@ -965,7 +965,7 @@ ThemeMap = {BackgroundColor3 = "InlineColor"}
             Position = UDim2.new(0, 1, 0, 1),
             Size = UDim2.new(1, -2, 1, -2),
             BorderSizePixel = 0,
-            ZIndex = 10,
+            ZIndex = 5000,
 ThemeMap = {BackgroundColor3 = "GroupBoxColor"}
         })
         
@@ -1016,7 +1016,7 @@ ThemeMap = {BackgroundColor3 = "GroupBoxColor"}
                     TextColor3 = isSelected and Library.Theme.AccentColor or Library.Theme.TextColor,
                     TextSize = 12,
                     TextXAlignment = Enum.TextXAlignment.Left,
-                    ZIndex = 11,
+                    ZIndex = 5005,
 ThemeMap = {BackgroundColor3 = "GroupBoxColor"}
                 })
                 
@@ -1250,7 +1250,7 @@ ThemeMap = {BackgroundColor3 = "InlineColor"}
             BackgroundColor3 = Library.Theme.OutlineColor,
             Size = UDim2.new(0, 160, 0, 175),
             Visible = false,
-            ZIndex = 15,
+            ZIndex = 6000,
 ThemeMap = {BackgroundColor3 = "OutlineColor"}
         })
         local FlyoutInline = Create("Frame", {
@@ -1259,7 +1259,7 @@ ThemeMap = {BackgroundColor3 = "OutlineColor"}
             Position = UDim2.new(0, 1, 0, 1),
             Size = UDim2.new(1, -2, 1, -2),
             BorderSizePixel = 0,
-            ZIndex = 15,
+            ZIndex = 6000,
 ThemeMap = {BackgroundColor3 = "InlineColor"}
         })
         local FlyoutBg = Create("Frame", {
@@ -1268,7 +1268,7 @@ ThemeMap = {BackgroundColor3 = "InlineColor"}
             Position = UDim2.new(0, 1, 0, 1),
             Size = UDim2.new(1, -2, 1, -2),
             BorderSizePixel = 0,
-            ZIndex = 15,
+            ZIndex = 6000,
 ThemeMap = {BackgroundColor3 = "GroupBoxColor"}
         })
 
@@ -1279,7 +1279,7 @@ ThemeMap = {BackgroundColor3 = "GroupBoxColor"}
             Position = UDim2.new(0, 5, 0, 5),
             Size = UDim2.new(1, -10, 0, 140),
             BorderSizePixel = 0,
-            ZIndex = 16,
+            ZIndex = 6001,
 ThemeMap = {BackgroundColor3 = "OutlineColor"}
         })
         local SVBg = Create("Frame", {
@@ -1295,7 +1295,7 @@ ThemeMap = {BackgroundColor3 = "OutlineColor"}
             BackgroundColor3 = Color3.new(1,1,1),
             Size = UDim2.new(1, 0, 1, 0),
             BorderSizePixel = 0,
-            ZIndex = 17
+            ZIndex = 6002
         })
         Create("UIGradient", {
             Parent = SVWhite,
@@ -1309,7 +1309,7 @@ ThemeMap = {BackgroundColor3 = "OutlineColor"}
             BackgroundColor3 = Color3.new(0,0,0),
             Size = UDim2.new(1, 0, 1, 0),
             BorderSizePixel = 0,
-            ZIndex = 18
+            ZIndex = 6003
         })
         Create("UIGradient", {
             Parent = SVBlack,
@@ -1327,7 +1327,7 @@ ThemeMap = {BackgroundColor3 = "OutlineColor"}
             Position = UDim2.new(s, -2, 1 - v, -2),
             BorderSizePixel = 1,
             BorderColor3 = Color3.new(0,0,0),
-            ZIndex = 19
+            ZIndex = 6004
         })
 
         -- Hue Map
@@ -1337,7 +1337,7 @@ ThemeMap = {BackgroundColor3 = "OutlineColor"}
             Position = UDim2.new(0, 5, 0, 150),
             Size = UDim2.new(1, -10, 0, 15),
             BorderSizePixel = 0,
-            ZIndex = 16,
+            ZIndex = 6001,
 ThemeMap = {BackgroundColor3 = "OutlineColor"}
         })
         local HueBg = Create("Frame", {
@@ -1367,7 +1367,7 @@ ThemeMap = {BackgroundColor3 = "OutlineColor"}
             Position = UDim2.new(h, -1, 0, 0),
             BorderSizePixel = 1,
             BorderColor3 = Color3.new(0,0,0),
-            ZIndex = 17
+            ZIndex = 6002
         })
 
         local function UpdateColor()
@@ -1502,7 +1502,7 @@ function Library:CreateWindow(options)
         BackgroundColor3 = Library.Theme.OutlineColor,
         Size = UDim2.new(0, 0, 0, 18),
         Visible = false,
-        ZIndex = 100,
+        ZIndex = 10000,
 ThemeMap = {BackgroundColor3 = "OutlineColor"}
     })
     local TooltipInline = Create("Frame", {
