@@ -5,27 +5,62 @@ ThemeManager.Folder = "LinoriaLiteSettings"
 ThemeManager.Library = nil
 
 ThemeManager.BuiltInThemes = {
-    Default = {
-        BackgroundColor = Color3.fromRGB(15, 15, 15),
-        MainColor = Color3.fromRGB(20, 20, 20),
-        AccentColor = Color3.fromRGB(0, 255, 255),
-        OutlineColor = Color3.fromRGB(0, 0, 0),
-        TextColor = Color3.fromRGB(255, 255, 255),
+    ["Default"] = {
+        TextColor = Color3.fromHex("ffffff"),
+        MainColor = Color3.fromHex("1c1c1c"),
+        AccentColor = Color3.fromHex("0055ff"),
+        BackgroundColor = Color3.fromHex("141414"),
+        OutlineColor = Color3.fromHex("323232"),
     },
-    Darker = {
-        BackgroundColor = Color3.fromRGB(5, 5, 5),
-        MainColor = Color3.fromRGB(10, 10, 10),
-        AccentColor = Color3.fromRGB(255, 50, 50),
-        OutlineColor = Color3.fromRGB(0, 0, 0),
-        TextColor = Color3.fromRGB(255, 255, 255),
+    ["BBot"] = {
+        TextColor = Color3.fromHex("ffffff"),
+        MainColor = Color3.fromHex("1e1e1e"),
+        AccentColor = Color3.fromHex("7e48a3"),
+        BackgroundColor = Color3.fromHex("232323"),
+        OutlineColor = Color3.fromHex("141414"),
     },
-    Light = {
-        BackgroundColor = Color3.fromRGB(230, 230, 230),
-        MainColor = Color3.fromRGB(245, 245, 245),
-        AccentColor = Color3.fromRGB(0, 100, 255),
-        OutlineColor = Color3.fromRGB(150, 150, 150),
-        TextColor = Color3.fromRGB(20, 20, 20),
-    }
+    ["Fatality"] = {
+        TextColor = Color3.fromHex("ffffff"),
+        MainColor = Color3.fromHex("1e1842"),
+        AccentColor = Color3.fromHex("c50754"),
+        BackgroundColor = Color3.fromHex("191335"),
+        OutlineColor = Color3.fromHex("3c355d"),
+    },
+    ["Jester"] = {
+        TextColor = Color3.fromHex("ffffff"),
+        MainColor = Color3.fromHex("242424"),
+        AccentColor = Color3.fromHex("db4467"),
+        BackgroundColor = Color3.fromHex("1c1c1c"),
+        OutlineColor = Color3.fromHex("373737"),
+    },
+    ["Mint"] = {
+        TextColor = Color3.fromHex("ffffff"),
+        MainColor = Color3.fromHex("242424"),
+        AccentColor = Color3.fromHex("3db488"),
+        BackgroundColor = Color3.fromHex("1c1c1c"),
+        OutlineColor = Color3.fromHex("373737"),
+    },
+    ["Tokyo Night"] = {
+        TextColor = Color3.fromHex("ffffff"),
+        MainColor = Color3.fromHex("191925"),
+        AccentColor = Color3.fromHex("6759b3"),
+        BackgroundColor = Color3.fromHex("16161f"),
+        OutlineColor = Color3.fromHex("323232"),
+    },
+    ["Ubuntu"] = {
+        TextColor = Color3.fromHex("ffffff"),
+        MainColor = Color3.fromHex("3e3e3e"),
+        AccentColor = Color3.fromHex("e2581e"),
+        BackgroundColor = Color3.fromHex("323232"),
+        OutlineColor = Color3.fromHex("191919"),
+    },
+    ["Quartz"] = {
+        TextColor = Color3.fromHex("ffffff"),
+        MainColor = Color3.fromHex("232330"),
+        AccentColor = Color3.fromHex("426e87"),
+        BackgroundColor = Color3.fromHex("1d1b26"),
+        OutlineColor = Color3.fromHex("27232f"),
+    },
 }
 
 function ThemeManager:SetLibrary(lib)
