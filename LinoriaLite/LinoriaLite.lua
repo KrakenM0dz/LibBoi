@@ -9,7 +9,7 @@ local LocalPlayer = Players.LocalPlayer
 local Library = {}
 Library.Connections = {}
 Library.Options = {}
-Library.ThemeObjects = setmetatable({}, {__mode = "k"})
+Library.ThemeObjects = {}
 
 function Library:Unload()
     for _, connection in ipairs(Library.Connections) do
@@ -18,6 +18,8 @@ function Library:Unload()
         end
     end
     table.clear(Library.Connections)
+    table.clear(Library.ThemeObjects)
+    table.clear(Library.Options)
     if Library.ScreenGui then
         Library.ScreenGui:Destroy()
     end
