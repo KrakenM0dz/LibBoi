@@ -46,6 +46,11 @@ function Library:UpdateTheme(themeVar, newColor)
             end
         end
     end
+    for _, obj in pairs(Library.Options) do
+        if type(obj.UpdateColors) == "function" then
+            obj:UpdateColors()
+        end
+    end
 end
 
 local function Create(className, properties)
@@ -121,9 +126,7 @@ local function BindElementMethods(Obj, ElementContainer, WindowObj)
             TextColor3 = Library.Theme.TextColor,
             TextSize = 12,
             TextXAlignment = Enum.TextXAlignment.Left,
-        ThemeMap = {TextColor3 = "TextColor"},
-            ThemeMap = {TextColor3 = "TextColor"},
-            ThemeMap = {TextColor3 = "TextColor"}
+ThemeMap = {TextColor3 = "TextColor"}
         })
         return { SetText = function(newText) Label.Text = newText end }
     end
@@ -140,9 +143,7 @@ local function BindElementMethods(Obj, ElementContainer, WindowObj)
             Position = UDim2.new(0, 0, 0.5, 0),
             Size = UDim2.new(1, 0, 0, 1),
             BorderSizePixel = 0,
-        ThemeMap = {BackgroundColor3 = "OutlineColor"},
-            ThemeMap = {BackgroundColor3 = "OutlineColor"},
-            ThemeMap = {BackgroundColor3 = "OutlineColor"}
+ThemeMap = {BackgroundColor3 = "OutlineColor"}
         })
         local DivInline = Create("Frame", {
             Parent = DivContainer,
@@ -150,9 +151,7 @@ local function BindElementMethods(Obj, ElementContainer, WindowObj)
             Position = UDim2.new(0, 0, 0.5, 1),
             Size = UDim2.new(1, 0, 0, 1),
             BorderSizePixel = 0,
-        ThemeMap = {BackgroundColor3 = "InlineColor"},
-            ThemeMap = {BackgroundColor3 = "InlineColor"},
-            ThemeMap = {BackgroundColor3 = "InlineColor"}
+ThemeMap = {BackgroundColor3 = "InlineColor"}
         })
     end
 
@@ -174,9 +173,7 @@ local function BindElementMethods(Obj, ElementContainer, WindowObj)
             Size = UDim2.new(0, 10, 0, 10),
             Position = UDim2.new(0, 0, 0.5, -5),
             BorderSizePixel = 0,
-        ThemeMap = {BackgroundColor3 = "OutlineColor"},
-            ThemeMap = {BackgroundColor3 = "OutlineColor"},
-            ThemeMap = {BackgroundColor3 = "OutlineColor"}
+ThemeMap = {BackgroundColor3 = "OutlineColor"}
         })
         local CheckInline = Create("Frame", {
             Parent = CheckOutline,
@@ -184,9 +181,7 @@ local function BindElementMethods(Obj, ElementContainer, WindowObj)
             Position = UDim2.new(0, 1, 0, 1),
             Size = UDim2.new(1, -2, 1, -2),
             BorderSizePixel = 0,
-        ThemeMap = {BackgroundColor3 = "InlineColor"},
-            ThemeMap = {BackgroundColor3 = "InlineColor"},
-            ThemeMap = {BackgroundColor3 = "InlineColor"}
+ThemeMap = {BackgroundColor3 = "InlineColor"}
         })
         local CheckFill = Create("Frame", {
             Parent = CheckInline,
@@ -252,9 +247,7 @@ local function BindElementMethods(Obj, ElementContainer, WindowObj)
                 TextSize = 12,
                 TextXAlignment = Enum.TextXAlignment.Right,
                 ZIndex = 5,
-            ThemeMap = {TextColor3 = "TextMuted"},
-                ThemeMap = {TextColor3 = "TextMuted"},
-                ThemeMap = {TextColor3 = "TextMuted"}
+ThemeMap = {TextColor3 = "TextMuted"}
             })
             
             local BindBtn = Create("TextButton", {
@@ -297,6 +290,12 @@ local function BindElementMethods(Obj, ElementContainer, WindowObj)
 
         ToggleObj.Type = "Toggle"
         ToggleObj.Value = state
+        ToggleObj.UpdateColors = function()
+            local targetBg = state and Library.Theme.AccentColor or Library.Theme.GroupBoxColor
+            local targetText = state and Library.Theme.TextColor or Library.Theme.TextMuted
+            CheckFill.BackgroundColor3 = targetBg
+            Label.TextColor3 = targetText
+        end
         ToggleObj.Save = function(self) return self.Value end
         ToggleObj.Load = function(self, val) self.SetValue(val) end
         Library.Options[idx] = ToggleObj
@@ -312,9 +311,7 @@ local function BindElementMethods(Obj, ElementContainer, WindowObj)
             BackgroundColor3 = Library.Theme.OutlineColor,
             Size = UDim2.new(1, 0, 0, 20),
             BorderSizePixel = 0,
-        ThemeMap = {BackgroundColor3 = "OutlineColor"},
-            ThemeMap = {BackgroundColor3 = "OutlineColor"},
-            ThemeMap = {BackgroundColor3 = "OutlineColor"}
+ThemeMap = {BackgroundColor3 = "OutlineColor"}
         })
         local BtnInline = Create("Frame", {
             Parent = ButtonFrame,
@@ -322,9 +319,7 @@ local function BindElementMethods(Obj, ElementContainer, WindowObj)
             Position = UDim2.new(0, 1, 0, 1),
             Size = UDim2.new(1, -2, 1, -2),
             BorderSizePixel = 0,
-        ThemeMap = {BackgroundColor3 = "InlineColor"},
-            ThemeMap = {BackgroundColor3 = "InlineColor"},
-            ThemeMap = {BackgroundColor3 = "InlineColor"}
+ThemeMap = {BackgroundColor3 = "InlineColor"}
         })
         local BtnBg = Create("Frame", {
             Parent = BtnInline,
@@ -332,9 +327,7 @@ local function BindElementMethods(Obj, ElementContainer, WindowObj)
             Position = UDim2.new(0, 1, 0, 1),
             Size = UDim2.new(1, -2, 1, -2),
             BorderSizePixel = 0,
-        ThemeMap = {BackgroundColor3 = "GroupBoxColor"},
-            ThemeMap = {BackgroundColor3 = "GroupBoxColor"},
-            ThemeMap = {BackgroundColor3 = "GroupBoxColor"}
+ThemeMap = {BackgroundColor3 = "GroupBoxColor"}
         })
 
         local Label = Create("TextLabel", {
@@ -346,9 +339,7 @@ local function BindElementMethods(Obj, ElementContainer, WindowObj)
             TextColor3 = Library.Theme.TextColor,
             TextSize = 12,
             ZIndex = 2,
-        ThemeMap = {TextColor3 = "TextColor"},
-            ThemeMap = {TextColor3 = "TextColor"},
-            ThemeMap = {TextColor3 = "TextColor"}
+ThemeMap = {TextColor3 = "TextColor"}
         })
 
         local Button = Create("TextButton", {
@@ -403,9 +394,7 @@ local function BindElementMethods(Obj, ElementContainer, WindowObj)
             TextColor3 = Library.Theme.TextColor,
             TextSize = 12,
             TextXAlignment = Enum.TextXAlignment.Left,
-        ThemeMap = {TextColor3 = "TextColor"},
-            ThemeMap = {TextColor3 = "TextColor"},
-            ThemeMap = {TextColor3 = "TextColor"}
+ThemeMap = {TextColor3 = "TextColor"}
         })
 
         local BoxOutline = Create("Frame", {
@@ -414,9 +403,7 @@ local function BindElementMethods(Obj, ElementContainer, WindowObj)
             Position = UDim2.new(0, 0, 0, 16),
             Size = UDim2.new(1, 0, 0, 20),
             BorderSizePixel = 0,
-        ThemeMap = {BackgroundColor3 = "OutlineColor"},
-            ThemeMap = {BackgroundColor3 = "OutlineColor"},
-            ThemeMap = {BackgroundColor3 = "OutlineColor"}
+ThemeMap = {BackgroundColor3 = "OutlineColor"}
         })
         local BoxInline = Create("Frame", {
             Parent = BoxOutline,
@@ -424,9 +411,7 @@ local function BindElementMethods(Obj, ElementContainer, WindowObj)
             Position = UDim2.new(0, 1, 0, 1),
             Size = UDim2.new(1, -2, 1, -2),
             BorderSizePixel = 0,
-        ThemeMap = {BackgroundColor3 = "InlineColor"},
-            ThemeMap = {BackgroundColor3 = "InlineColor"},
-            ThemeMap = {BackgroundColor3 = "InlineColor"}
+ThemeMap = {BackgroundColor3 = "InlineColor"}
         })
         local BoxBg = Create("Frame", {
             Parent = BoxInline,
@@ -434,9 +419,7 @@ local function BindElementMethods(Obj, ElementContainer, WindowObj)
             Position = UDim2.new(0, 1, 0, 1),
             Size = UDim2.new(1, -2, 1, -2),
             BorderSizePixel = 0,
-        ThemeMap = {BackgroundColor3 = "GroupBoxColor"},
-            ThemeMap = {BackgroundColor3 = "GroupBoxColor"},
-            ThemeMap = {BackgroundColor3 = "GroupBoxColor"}
+ThemeMap = {BackgroundColor3 = "GroupBoxColor"}
         })
 
         local TextBox = Create("TextBox", {
@@ -452,9 +435,7 @@ local function BindElementMethods(Obj, ElementContainer, WindowObj)
             TextSize = 12,
             TextXAlignment = Enum.TextXAlignment.Left,
             ClearTextOnFocus = false,
-        ThemeMap = {TextColor3 = "TextColor", PlaceholderColor3 = "TextMuted"},
-            ThemeMap = {TextColor3 = "TextColor", PlaceholderColor3 = "TextMuted"},
-            ThemeMap = {TextColor3 = "TextColor", PlaceholderColor3 = "TextMuted"}
+ThemeMap = {TextColor3 = "TextColor", PlaceholderColor3 = "TextMuted"}
         })
 
         TextBox.FocusLost:Connect(function() callback(TextBox.Text) end)
@@ -487,9 +468,7 @@ local function BindElementMethods(Obj, ElementContainer, WindowObj)
             TextColor3 = Library.Theme.TextColor,
             TextSize = 12,
             TextXAlignment = Enum.TextXAlignment.Left,
-        ThemeMap = {TextColor3 = "TextColor"},
-            ThemeMap = {TextColor3 = "TextColor"},
-            ThemeMap = {TextColor3 = "TextColor"}
+ThemeMap = {TextColor3 = "TextColor"}
         })
 
         local SliderOutline = Create("Frame", {
@@ -498,9 +477,7 @@ local function BindElementMethods(Obj, ElementContainer, WindowObj)
             Position = UDim2.new(0, 0, 0, 14),
             Size = UDim2.new(1, 0, 0, 14),
             BorderSizePixel = 0,
-        ThemeMap = {BackgroundColor3 = "OutlineColor"},
-            ThemeMap = {BackgroundColor3 = "OutlineColor"},
-            ThemeMap = {BackgroundColor3 = "OutlineColor"}
+ThemeMap = {BackgroundColor3 = "OutlineColor"}
         })
         local SliderInline = Create("Frame", {
             Parent = SliderOutline,
@@ -508,9 +485,7 @@ local function BindElementMethods(Obj, ElementContainer, WindowObj)
             Position = UDim2.new(0, 1, 0, 1),
             Size = UDim2.new(1, -2, 1, -2),
             BorderSizePixel = 0,
-        ThemeMap = {BackgroundColor3 = "InlineColor"},
-            ThemeMap = {BackgroundColor3 = "InlineColor"},
-            ThemeMap = {BackgroundColor3 = "InlineColor"}
+ThemeMap = {BackgroundColor3 = "InlineColor"}
         })
         local SliderBg = Create("Frame", {
             Parent = SliderInline,
@@ -518,9 +493,7 @@ local function BindElementMethods(Obj, ElementContainer, WindowObj)
             Position = UDim2.new(0, 1, 0, 1),
             Size = UDim2.new(1, -2, 1, -2),
             BorderSizePixel = 0,
-        ThemeMap = {BackgroundColor3 = "GroupBoxColor"},
-            ThemeMap = {BackgroundColor3 = "GroupBoxColor"},
-            ThemeMap = {BackgroundColor3 = "GroupBoxColor"}
+ThemeMap = {BackgroundColor3 = "GroupBoxColor"}
         })
 
         local SliderFill = Create("Frame", {
@@ -529,9 +502,7 @@ local function BindElementMethods(Obj, ElementContainer, WindowObj)
             Size = UDim2.new(0, 0, 1, 0),
             BorderSizePixel = 0,
             ZIndex = 2,
-        ThemeMap = {BackgroundColor3 = "AccentColor"},
-            ThemeMap = {BackgroundColor3 = "AccentColor"},
-            ThemeMap = {BackgroundColor3 = "AccentColor"}
+ThemeMap = {BackgroundColor3 = "AccentColor"}
         })
         
         Create("UIGradient", {
@@ -552,17 +523,13 @@ local function BindElementMethods(Obj, ElementContainer, WindowObj)
             TextColor3 = Library.Theme.TextColor,
             TextSize = 12,
             ZIndex = 4,
-        ThemeMap = {TextColor3 = "TextColor"},
-            ThemeMap = {TextColor3 = "TextColor"},
-            ThemeMap = {TextColor3 = "TextColor"}
+ThemeMap = {TextColor3 = "TextColor"}
         })
         Create("UIStroke", {
             Parent = ValueLabel,
             Color = Library.Theme.OutlineColor,
             Thickness = 1,
-        ThemeMap = {Color = "OutlineColor"},
-            ThemeMap = {Color = "OutlineColor"},
-            ThemeMap = {Color = "OutlineColor"}
+ThemeMap = {Color = "OutlineColor"}
         })
 
         local function UpdateSlider(val, instant)
@@ -611,6 +578,11 @@ local function BindElementMethods(Obj, ElementContainer, WindowObj)
         local obj = { 
             Type = "Slider",
             Value = default,
+            UpdateColors = function()
+                SliderFill.BackgroundColor3 = Library.Theme.AccentColor
+                ValueLabel.TextColor3 = Library.Theme.TextColor
+                Label.TextColor3 = Library.Theme.TextColor
+            end,
             SetValue = function(newVal) UpdateSlider(newVal, false) end,
             Save = function(self) return self.Value end,
             Load = function(self, val) self.SetValue(val) end,
@@ -649,9 +621,7 @@ local function BindElementMethods(Obj, ElementContainer, WindowObj)
             TextColor3 = Library.Theme.TextColor,
             TextSize = 12,
             TextXAlignment = Enum.TextXAlignment.Left,
-        ThemeMap = {TextColor3 = "TextColor"},
-            ThemeMap = {TextColor3 = "TextColor"},
-            ThemeMap = {TextColor3 = "TextColor"}
+ThemeMap = {TextColor3 = "TextColor"}
         })
 
         local BoxOutline = Create("Frame", {
@@ -660,9 +630,7 @@ local function BindElementMethods(Obj, ElementContainer, WindowObj)
             Position = UDim2.new(0, 0, 0, 16),
             Size = UDim2.new(1, 0, 0, 20),
             BorderSizePixel = 0,
-        ThemeMap = {BackgroundColor3 = "OutlineColor"},
-            ThemeMap = {BackgroundColor3 = "OutlineColor"},
-            ThemeMap = {BackgroundColor3 = "OutlineColor"}
+ThemeMap = {BackgroundColor3 = "OutlineColor"}
         })
         local BoxInline = Create("Frame", {
             Parent = BoxOutline,
@@ -670,9 +638,7 @@ local function BindElementMethods(Obj, ElementContainer, WindowObj)
             Position = UDim2.new(0, 1, 0, 1),
             Size = UDim2.new(1, -2, 1, -2),
             BorderSizePixel = 0,
-        ThemeMap = {BackgroundColor3 = "InlineColor"},
-            ThemeMap = {BackgroundColor3 = "InlineColor"},
-            ThemeMap = {BackgroundColor3 = "InlineColor"}
+ThemeMap = {BackgroundColor3 = "InlineColor"}
         })
         local BoxBg = Create("Frame", {
             Parent = BoxInline,
@@ -680,9 +646,7 @@ local function BindElementMethods(Obj, ElementContainer, WindowObj)
             Position = UDim2.new(0, 1, 0, 1),
             Size = UDim2.new(1, -2, 1, -2),
             BorderSizePixel = 0,
-        ThemeMap = {BackgroundColor3 = "GroupBoxColor"},
-            ThemeMap = {BackgroundColor3 = "GroupBoxColor"},
-            ThemeMap = {BackgroundColor3 = "GroupBoxColor"}
+ThemeMap = {BackgroundColor3 = "GroupBoxColor"}
         })
         
         local SelectedLabel = Create("TextLabel", {
@@ -695,9 +659,7 @@ local function BindElementMethods(Obj, ElementContainer, WindowObj)
             TextColor3 = Library.Theme.TextColor,
             TextSize = 12,
             TextXAlignment = Enum.TextXAlignment.Left,
-        ThemeMap = {TextColor3 = "TextColor"},
-            ThemeMap = {TextColor3 = "TextColor"},
-            ThemeMap = {TextColor3 = "TextColor"}
+ThemeMap = {TextColor3 = "TextColor"}
         })
         
         local Indicator = Create("TextLabel", {
@@ -709,9 +671,7 @@ local function BindElementMethods(Obj, ElementContainer, WindowObj)
             Text = "▼",
             TextColor3 = Library.Theme.TextMuted,
             TextSize = 10,
-        ThemeMap = {TextColor3 = "TextMuted"},
-            ThemeMap = {TextColor3 = "TextMuted"},
-            ThemeMap = {TextColor3 = "TextMuted"}
+ThemeMap = {TextColor3 = "TextMuted"}
         })
         
         local ToggleBtn = Create("TextButton", {
@@ -731,9 +691,7 @@ local function BindElementMethods(Obj, ElementContainer, WindowObj)
             Visible = false,
             ZIndex = 10,
             ClipsDescendants = true,
-        ThemeMap = {BackgroundColor3 = "OutlineColor"},
-            ThemeMap = {BackgroundColor3 = "OutlineColor"},
-            ThemeMap = {BackgroundColor3 = "OutlineColor"}
+ThemeMap = {BackgroundColor3 = "OutlineColor"}
         })
         local OptsInline = Create("Frame", {
             Parent = OptsOutline,
@@ -742,9 +700,7 @@ local function BindElementMethods(Obj, ElementContainer, WindowObj)
             Size = UDim2.new(1, -2, 1, -2),
             BorderSizePixel = 0,
             ZIndex = 10,
-        ThemeMap = {BackgroundColor3 = "InlineColor"},
-            ThemeMap = {BackgroundColor3 = "InlineColor"},
-            ThemeMap = {BackgroundColor3 = "InlineColor"}
+ThemeMap = {BackgroundColor3 = "InlineColor"}
         })
         local OptsBg = Create("Frame", {
             Parent = OptsInline,
@@ -753,9 +709,7 @@ local function BindElementMethods(Obj, ElementContainer, WindowObj)
             Size = UDim2.new(1, -2, 1, -2),
             BorderSizePixel = 0,
             ZIndex = 10,
-        ThemeMap = {BackgroundColor3 = "GroupBoxColor"},
-            ThemeMap = {BackgroundColor3 = "GroupBoxColor"},
-            ThemeMap = {BackgroundColor3 = "GroupBoxColor"}
+ThemeMap = {BackgroundColor3 = "GroupBoxColor"}
         })
         
         local OptionsLayout = Create("UIListLayout", {
@@ -805,9 +759,7 @@ local function BindElementMethods(Obj, ElementContainer, WindowObj)
                     TextSize = 12,
                     TextXAlignment = Enum.TextXAlignment.Left,
                     ZIndex = 11,
-                ThemeMap = {BackgroundColor3 = "GroupBoxColor"},
-                    ThemeMap = {BackgroundColor3 = "GroupBoxColor"},
-                    ThemeMap = {BackgroundColor3 = "GroupBoxColor"}
+ThemeMap = {BackgroundColor3 = "GroupBoxColor"}
                 })
                 
                 OptBtn.MouseButton1Click:Connect(function()
@@ -862,6 +814,10 @@ local function BindElementMethods(Obj, ElementContainer, WindowObj)
         local obj = {
             Type = "Dropdown",
             Value = selected,
+            UpdateColors = function()
+                Label.TextColor3 = Library.Theme.TextColor
+                SelectedLabel.TextColor3 = Library.Theme.TextMuted
+            end,
             Save = function(self) return self.Value end,
             Load = function(self, val) self.SetValue(val) end,
             SetValue = function(newVal)
@@ -910,9 +866,7 @@ local function BindElementMethods(Obj, ElementContainer, WindowObj)
             TextColor3 = Library.Theme.TextColor,
             TextSize = 12,
             TextXAlignment = Enum.TextXAlignment.Left,
-        ThemeMap = {TextColor3 = "TextColor"},
-            ThemeMap = {TextColor3 = "TextColor"},
-            ThemeMap = {TextColor3 = "TextColor"}
+ThemeMap = {TextColor3 = "TextColor"}
         })
 
         local BoxOutline = Create("Frame", {
@@ -921,9 +875,7 @@ local function BindElementMethods(Obj, ElementContainer, WindowObj)
             Position = UDim2.new(0, 0, 0, 16),
             Size = UDim2.new(1, 0, 0, 20),
             BorderSizePixel = 0,
-        ThemeMap = {BackgroundColor3 = "OutlineColor"},
-            ThemeMap = {BackgroundColor3 = "OutlineColor"},
-            ThemeMap = {BackgroundColor3 = "OutlineColor"}
+ThemeMap = {BackgroundColor3 = "OutlineColor"}
         })
         local BoxInline = Create("Frame", {
             Parent = BoxOutline,
@@ -931,9 +883,7 @@ local function BindElementMethods(Obj, ElementContainer, WindowObj)
             Position = UDim2.new(0, 1, 0, 1),
             Size = UDim2.new(1, -2, 1, -2),
             BorderSizePixel = 0,
-        ThemeMap = {BackgroundColor3 = "InlineColor"},
-            ThemeMap = {BackgroundColor3 = "InlineColor"},
-            ThemeMap = {BackgroundColor3 = "InlineColor"}
+ThemeMap = {BackgroundColor3 = "InlineColor"}
         })
         local BoxBg = Create("Frame", {
             Parent = BoxInline,
@@ -941,9 +891,7 @@ local function BindElementMethods(Obj, ElementContainer, WindowObj)
             Position = UDim2.new(0, 1, 0, 1),
             Size = UDim2.new(1, -2, 1, -2),
             BorderSizePixel = 0,
-        ThemeMap = {BackgroundColor3 = "GroupBoxColor"},
-            ThemeMap = {BackgroundColor3 = "GroupBoxColor"},
-            ThemeMap = {BackgroundColor3 = "GroupBoxColor"}
+ThemeMap = {BackgroundColor3 = "GroupBoxColor"}
         })
         
         local function GetSelectedString()
@@ -968,9 +916,7 @@ local function BindElementMethods(Obj, ElementContainer, WindowObj)
             TextSize = 12,
             TextXAlignment = Enum.TextXAlignment.Left,
             TextTruncate = Enum.TextTruncate.AtEnd,
-        ThemeMap = {TextColor3 = "TextColor"},
-            ThemeMap = {TextColor3 = "TextColor"},
-            ThemeMap = {TextColor3 = "TextColor"}
+ThemeMap = {TextColor3 = "TextColor"}
         })
         
         local Indicator = Create("TextLabel", {
@@ -982,9 +928,7 @@ local function BindElementMethods(Obj, ElementContainer, WindowObj)
             Text = "▼",
             TextColor3 = Library.Theme.TextMuted,
             TextSize = 10,
-        ThemeMap = {TextColor3 = "TextMuted"},
-            ThemeMap = {TextColor3 = "TextMuted"},
-            ThemeMap = {TextColor3 = "TextMuted"}
+ThemeMap = {TextColor3 = "TextMuted"}
         })
         
         local ToggleBtn = Create("TextButton", {
@@ -1004,9 +948,7 @@ local function BindElementMethods(Obj, ElementContainer, WindowObj)
             Visible = false,
             ZIndex = 10,
             ClipsDescendants = true,
-        ThemeMap = {BackgroundColor3 = "OutlineColor"},
-            ThemeMap = {BackgroundColor3 = "OutlineColor"},
-            ThemeMap = {BackgroundColor3 = "OutlineColor"}
+ThemeMap = {BackgroundColor3 = "OutlineColor"}
         })
         local OptsInline = Create("Frame", {
             Parent = OptsOutline,
@@ -1015,9 +957,7 @@ local function BindElementMethods(Obj, ElementContainer, WindowObj)
             Size = UDim2.new(1, -2, 1, -2),
             BorderSizePixel = 0,
             ZIndex = 10,
-        ThemeMap = {BackgroundColor3 = "InlineColor"},
-            ThemeMap = {BackgroundColor3 = "InlineColor"},
-            ThemeMap = {BackgroundColor3 = "InlineColor"}
+ThemeMap = {BackgroundColor3 = "InlineColor"}
         })
         local OptsBg = Create("Frame", {
             Parent = OptsInline,
@@ -1026,9 +966,7 @@ local function BindElementMethods(Obj, ElementContainer, WindowObj)
             Size = UDim2.new(1, -2, 1, -2),
             BorderSizePixel = 0,
             ZIndex = 10,
-        ThemeMap = {BackgroundColor3 = "GroupBoxColor"},
-            ThemeMap = {BackgroundColor3 = "GroupBoxColor"},
-            ThemeMap = {BackgroundColor3 = "GroupBoxColor"}
+ThemeMap = {BackgroundColor3 = "GroupBoxColor"}
         })
         
         local OptionsLayout = Create("UIListLayout", {
@@ -1079,9 +1017,7 @@ local function BindElementMethods(Obj, ElementContainer, WindowObj)
                     TextSize = 12,
                     TextXAlignment = Enum.TextXAlignment.Left,
                     ZIndex = 11,
-                ThemeMap = {BackgroundColor3 = "GroupBoxColor"},
-                    ThemeMap = {BackgroundColor3 = "GroupBoxColor"},
-                    ThemeMap = {BackgroundColor3 = "GroupBoxColor"}
+ThemeMap = {BackgroundColor3 = "GroupBoxColor"}
                 })
                 
                 OptBtn.MouseButton1Click:Connect(function()
@@ -1137,6 +1073,10 @@ local function BindElementMethods(Obj, ElementContainer, WindowObj)
         local obj = {
             Type = "MultiDropdown",
             Value = selected,
+            UpdateColors = function()
+                Label.TextColor3 = Library.Theme.TextColor
+                SelectedLabel.TextColor3 = Library.Theme.TextMuted
+            end,
             Save = function(self)
                 local res = {}
                 for k, v in pairs(self.Value) do if v then table.insert(res, k) end end
@@ -1185,9 +1125,7 @@ local function BindElementMethods(Obj, ElementContainer, WindowObj)
             TextColor3 = Library.Theme.TextColor,
             TextSize = 12,
             TextXAlignment = Enum.TextXAlignment.Left,
-        ThemeMap = {TextColor3 = "TextColor"},
-            ThemeMap = {TextColor3 = "TextColor"},
-            ThemeMap = {TextColor3 = "TextColor"}
+ThemeMap = {TextColor3 = "TextColor"}
         })
 
         local ValueLabel = Create("TextLabel", {
@@ -1200,9 +1138,7 @@ local function BindElementMethods(Obj, ElementContainer, WindowObj)
             TextColor3 = Library.Theme.TextMuted,
             TextSize = 12,
             TextXAlignment = Enum.TextXAlignment.Right,
-        ThemeMap = {TextColor3 = "TextMuted"},
-            ThemeMap = {TextColor3 = "TextMuted"},
-            ThemeMap = {TextColor3 = "TextMuted"}
+ThemeMap = {TextColor3 = "TextMuted"}
         })
 
         local Button = Create("TextButton", {
@@ -1274,9 +1210,7 @@ local function BindElementMethods(Obj, ElementContainer, WindowObj)
             TextColor3 = Library.Theme.TextColor,
             TextSize = 12,
             TextXAlignment = Enum.TextXAlignment.Left,
-        ThemeMap = {TextColor3 = "TextColor"},
-            ThemeMap = {TextColor3 = "TextColor"},
-            ThemeMap = {TextColor3 = "TextColor"}
+ThemeMap = {TextColor3 = "TextColor"}
         })
 
         local BoxOutline = Create("Frame", {
@@ -1285,9 +1219,7 @@ local function BindElementMethods(Obj, ElementContainer, WindowObj)
             Position = UDim2.new(1, -20, 0, 2),
             Size = UDim2.new(0, 20, 0, 10),
             BorderSizePixel = 0,
-        ThemeMap = {BackgroundColor3 = "OutlineColor"},
-            ThemeMap = {BackgroundColor3 = "OutlineColor"},
-            ThemeMap = {BackgroundColor3 = "OutlineColor"}
+ThemeMap = {BackgroundColor3 = "OutlineColor"}
         })
         local BoxInline = Create("Frame", {
             Parent = BoxOutline,
@@ -1295,9 +1227,7 @@ local function BindElementMethods(Obj, ElementContainer, WindowObj)
             Position = UDim2.new(0, 1, 0, 1),
             Size = UDim2.new(1, -2, 1, -2),
             BorderSizePixel = 0,
-        ThemeMap = {BackgroundColor3 = "InlineColor"},
-            ThemeMap = {BackgroundColor3 = "InlineColor"},
-            ThemeMap = {BackgroundColor3 = "InlineColor"}
+ThemeMap = {BackgroundColor3 = "InlineColor"}
         })
         local ColorDisplay = Create("Frame", {
             Parent = BoxInline,
@@ -1321,9 +1251,7 @@ local function BindElementMethods(Obj, ElementContainer, WindowObj)
             Size = UDim2.new(0, 160, 0, 175),
             Visible = false,
             ZIndex = 15,
-        ThemeMap = {BackgroundColor3 = "OutlineColor"},
-            ThemeMap = {BackgroundColor3 = "OutlineColor"},
-            ThemeMap = {BackgroundColor3 = "OutlineColor"}
+ThemeMap = {BackgroundColor3 = "OutlineColor"}
         })
         local FlyoutInline = Create("Frame", {
             Parent = FlyoutOutline,
@@ -1332,9 +1260,7 @@ local function BindElementMethods(Obj, ElementContainer, WindowObj)
             Size = UDim2.new(1, -2, 1, -2),
             BorderSizePixel = 0,
             ZIndex = 15,
-        ThemeMap = {BackgroundColor3 = "InlineColor"},
-            ThemeMap = {BackgroundColor3 = "InlineColor"},
-            ThemeMap = {BackgroundColor3 = "InlineColor"}
+ThemeMap = {BackgroundColor3 = "InlineColor"}
         })
         local FlyoutBg = Create("Frame", {
             Parent = FlyoutInline,
@@ -1343,9 +1269,7 @@ local function BindElementMethods(Obj, ElementContainer, WindowObj)
             Size = UDim2.new(1, -2, 1, -2),
             BorderSizePixel = 0,
             ZIndex = 15,
-        ThemeMap = {BackgroundColor3 = "GroupBoxColor"},
-            ThemeMap = {BackgroundColor3 = "GroupBoxColor"},
-            ThemeMap = {BackgroundColor3 = "GroupBoxColor"}
+ThemeMap = {BackgroundColor3 = "GroupBoxColor"}
         })
 
         -- SV Map
@@ -1356,9 +1280,7 @@ local function BindElementMethods(Obj, ElementContainer, WindowObj)
             Size = UDim2.new(1, -10, 0, 140),
             BorderSizePixel = 0,
             ZIndex = 16,
-        ThemeMap = {BackgroundColor3 = "OutlineColor"},
-            ThemeMap = {BackgroundColor3 = "OutlineColor"},
-            ThemeMap = {BackgroundColor3 = "OutlineColor"}
+ThemeMap = {BackgroundColor3 = "OutlineColor"}
         })
         local SVBg = Create("Frame", {
             Parent = SVOutline,
@@ -1416,9 +1338,7 @@ local function BindElementMethods(Obj, ElementContainer, WindowObj)
             Size = UDim2.new(1, -10, 0, 15),
             BorderSizePixel = 0,
             ZIndex = 16,
-        ThemeMap = {BackgroundColor3 = "OutlineColor"},
-            ThemeMap = {BackgroundColor3 = "OutlineColor"},
-            ThemeMap = {BackgroundColor3 = "OutlineColor"}
+ThemeMap = {BackgroundColor3 = "OutlineColor"}
         })
         local HueBg = Create("Frame", {
             Parent = HueOutline,
@@ -1583,9 +1503,7 @@ function Library:CreateWindow(options)
         Size = UDim2.new(0, 0, 0, 18),
         Visible = false,
         ZIndex = 100,
-    ThemeMap = {BackgroundColor3 = "OutlineColor"},
-        ThemeMap = {BackgroundColor3 = "OutlineColor"},
-        ThemeMap = {BackgroundColor3 = "OutlineColor"}
+ThemeMap = {BackgroundColor3 = "OutlineColor"}
     })
     local TooltipInline = Create("Frame", {
         Parent = TooltipOutline,
@@ -1593,9 +1511,7 @@ function Library:CreateWindow(options)
         Position = UDim2.new(0, 1, 0, 1),
         Size = UDim2.new(1, -2, 1, -2),
         BorderSizePixel = 0,
-    ThemeMap = {BackgroundColor3 = "InlineColor"},
-        ThemeMap = {BackgroundColor3 = "InlineColor"},
-        ThemeMap = {BackgroundColor3 = "InlineColor"}
+ThemeMap = {BackgroundColor3 = "InlineColor"}
     })
     local TooltipBg = Create("Frame", {
         Parent = TooltipInline,
@@ -1603,9 +1519,7 @@ function Library:CreateWindow(options)
         Position = UDim2.new(0, 1, 0, 1),
         Size = UDim2.new(1, -2, 1, -2),
         BorderSizePixel = 0,
-    ThemeMap = {BackgroundColor3 = "BackgroundColor"},
-        ThemeMap = {BackgroundColor3 = "BackgroundColor"},
-        ThemeMap = {BackgroundColor3 = "BackgroundColor"}
+ThemeMap = {BackgroundColor3 = "BackgroundColor"}
     })
     local TooltipText = Create("TextLabel", {
         Parent = TooltipBg,
@@ -1615,9 +1529,7 @@ function Library:CreateWindow(options)
         Text = "",
         TextColor3 = Library.Theme.TextColor,
         TextSize = 12,
-    ThemeMap = {TextColor3 = "TextColor"},
-        ThemeMap = {TextColor3 = "TextColor"},
-        ThemeMap = {TextColor3 = "TextColor"}
+ThemeMap = {TextColor3 = "TextColor"}
     })
     
     local function UpdateTooltip(text)
@@ -1652,9 +1564,7 @@ function Library:CreateWindow(options)
         Size = UDim2.new(0, 0, 0, 20),
         BorderSizePixel = 0,
         Visible = false,
-    ThemeMap = {BackgroundColor3 = "OutlineColor"},
-        ThemeMap = {BackgroundColor3 = "OutlineColor"},
-        ThemeMap = {BackgroundColor3 = "OutlineColor"}
+ThemeMap = {BackgroundColor3 = "OutlineColor"}
     })
     local WmInline = Create("Frame", {
         Parent = WatermarkOutline,
@@ -1662,9 +1572,7 @@ function Library:CreateWindow(options)
         Position = UDim2.new(0, 1, 0, 1),
         Size = UDim2.new(1, -2, 1, -2),
         BorderSizePixel = 0,
-    ThemeMap = {BackgroundColor3 = "InlineColor"},
-        ThemeMap = {BackgroundColor3 = "InlineColor"},
-        ThemeMap = {BackgroundColor3 = "InlineColor"}
+ThemeMap = {BackgroundColor3 = "InlineColor"}
     })
     local WmBg = Create("Frame", {
         Parent = WmInline,
@@ -1672,18 +1580,14 @@ function Library:CreateWindow(options)
         Position = UDim2.new(0, 1, 0, 1),
         Size = UDim2.new(1, -2, 1, -2),
         BorderSizePixel = 0,
-    ThemeMap = {BackgroundColor3 = "BackgroundColor"},
-        ThemeMap = {BackgroundColor3 = "BackgroundColor"},
-        ThemeMap = {BackgroundColor3 = "BackgroundColor"}
+ThemeMap = {BackgroundColor3 = "BackgroundColor"}
     })
     local WmAccent = Create("Frame", {
         Parent = WmBg,
         BackgroundColor3 = Library.Theme.AccentColor,
         Size = UDim2.new(1, 0, 0, 1),
         BorderSizePixel = 0,
-    ThemeMap = {BackgroundColor3 = "AccentColor"},
-        ThemeMap = {BackgroundColor3 = "AccentColor"},
-        ThemeMap = {BackgroundColor3 = "AccentColor"}
+ThemeMap = {BackgroundColor3 = "AccentColor"}
     })
     local WmText = Create("TextLabel", {
         Parent = WmBg,
@@ -1693,9 +1597,7 @@ function Library:CreateWindow(options)
         Text = "",
         TextColor3 = Library.Theme.TextColor,
         TextSize = 12,
-    ThemeMap = {TextColor3 = "TextColor"},
-        ThemeMap = {TextColor3 = "TextColor"},
-        ThemeMap = {TextColor3 = "TextColor"}
+ThemeMap = {TextColor3 = "TextColor"}
     })
     
     function WindowObj:SetWatermark(text)
@@ -1734,9 +1636,7 @@ function Library:CreateWindow(options)
             BackgroundColor3 = Library.Theme.OutlineColor,
             Size = UDim2.new(1, 0, 0, 24),
             BorderSizePixel = 0,
-        ThemeMap = {BackgroundColor3 = "OutlineColor"},
-            ThemeMap = {BackgroundColor3 = "OutlineColor"},
-            ThemeMap = {BackgroundColor3 = "OutlineColor"}
+ThemeMap = {BackgroundColor3 = "OutlineColor"}
         })
         local NotifInline = Create("Frame", {
             Parent = NotifOutline,
@@ -1744,9 +1644,7 @@ function Library:CreateWindow(options)
             Position = UDim2.new(0, 1, 0, 1),
             Size = UDim2.new(1, -2, 1, -2),
             BorderSizePixel = 0,
-        ThemeMap = {BackgroundColor3 = "InlineColor"},
-            ThemeMap = {BackgroundColor3 = "InlineColor"},
-            ThemeMap = {BackgroundColor3 = "InlineColor"}
+ThemeMap = {BackgroundColor3 = "InlineColor"}
         })
         local NotifBg = Create("Frame", {
             Parent = NotifInline,
@@ -1754,18 +1652,14 @@ function Library:CreateWindow(options)
             Position = UDim2.new(0, 1, 0, 1),
             Size = UDim2.new(1, -2, 1, -2),
             BorderSizePixel = 0,
-        ThemeMap = {BackgroundColor3 = "BackgroundColor"},
-            ThemeMap = {BackgroundColor3 = "BackgroundColor"},
-            ThemeMap = {BackgroundColor3 = "BackgroundColor"}
+ThemeMap = {BackgroundColor3 = "BackgroundColor"}
         })
         Create("Frame", {
             Parent = NotifBg,
             BackgroundColor3 = Library.Theme.AccentColor,
             Size = UDim2.new(0, 2, 1, 0),
             BorderSizePixel = 0,
-        ThemeMap = {BackgroundColor3 = "AccentColor"},
-            ThemeMap = {BackgroundColor3 = "AccentColor"},
-            ThemeMap = {BackgroundColor3 = "AccentColor"}
+ThemeMap = {BackgroundColor3 = "AccentColor"}
         })
         Create("TextLabel", {
             Parent = NotifBg,
@@ -1777,9 +1671,7 @@ function Library:CreateWindow(options)
             TextColor3 = Library.Theme.TextColor,
             TextSize = 12,
             TextXAlignment = Enum.TextXAlignment.Left,
-        ThemeMap = {TextColor3 = "TextColor"},
-            ThemeMap = {TextColor3 = "TextColor"},
-            ThemeMap = {TextColor3 = "TextColor"}
+ThemeMap = {TextColor3 = "TextColor"}
         })
         
         task.spawn(function()
@@ -1795,9 +1687,7 @@ function Library:CreateWindow(options)
         Position = UDim2.new(0.5, -Size.X.Offset/2, 0.5, -Size.Y.Offset/2),
         Size = Size,
         BorderSizePixel = 0,
-    ThemeMap = {BackgroundColor3 = "OutlineColor"},
-        ThemeMap = {BackgroundColor3 = "OutlineColor"},
-        ThemeMap = {BackgroundColor3 = "OutlineColor"}
+ThemeMap = {BackgroundColor3 = "OutlineColor"}
     })
     
     local Inline = Create("Frame", {
@@ -1807,9 +1697,7 @@ function Library:CreateWindow(options)
         Position = UDim2.new(0, 1, 0, 1),
         Size = UDim2.new(1, -2, 1, -2),
         BorderSizePixel = 0,
-    ThemeMap = {BackgroundColor3 = "InlineColor"},
-        ThemeMap = {BackgroundColor3 = "InlineColor"},
-        ThemeMap = {BackgroundColor3 = "InlineColor"}
+ThemeMap = {BackgroundColor3 = "InlineColor"}
     })
 
     local WindowBg = Create("Frame", {
@@ -1819,9 +1707,7 @@ function Library:CreateWindow(options)
         Position = UDim2.new(0, 1, 0, 1),
         Size = UDim2.new(1, -2, 1, -2),
         BorderSizePixel = 0,
-    ThemeMap = {BackgroundColor3 = "BackgroundColor"},
-        ThemeMap = {BackgroundColor3 = "BackgroundColor"},
-        ThemeMap = {BackgroundColor3 = "BackgroundColor"}
+ThemeMap = {BackgroundColor3 = "BackgroundColor"}
     })
 
     local Topbar = Create("Frame", {
@@ -1843,9 +1729,7 @@ function Library:CreateWindow(options)
         TextColor3 = Library.Theme.TextColor,
         TextSize = 12,
         TextXAlignment = Enum.TextXAlignment.Left,
-    ThemeMap = {TextColor3 = "TextColor"},
-        ThemeMap = {TextColor3 = "TextColor"},
-        ThemeMap = {TextColor3 = "TextColor"}
+ThemeMap = {TextColor3 = "TextColor"}
     })
     
     Create("Frame", {
@@ -1854,9 +1738,7 @@ function Library:CreateWindow(options)
         Position = UDim2.new(0, 0, 0, 18),
         Size = UDim2.new(1, 0, 0, 1),
         BorderSizePixel = 0,
-    ThemeMap = {BackgroundColor3 = "OutlineColor"},
-        ThemeMap = {BackgroundColor3 = "OutlineColor"},
-        ThemeMap = {BackgroundColor3 = "OutlineColor"}
+ThemeMap = {BackgroundColor3 = "OutlineColor"}
     })
     Create("Frame", {
         Parent = WindowBg,
@@ -1864,9 +1746,7 @@ function Library:CreateWindow(options)
         Position = UDim2.new(0, 0, 0, 19),
         Size = UDim2.new(1, 0, 0, 1),
         BorderSizePixel = 0,
-    ThemeMap = {BackgroundColor3 = "InlineColor"},
-        ThemeMap = {BackgroundColor3 = "InlineColor"},
-        ThemeMap = {BackgroundColor3 = "InlineColor"}
+ThemeMap = {BackgroundColor3 = "InlineColor"}
     })
 
     local TabContainer = Create("Frame", {
@@ -1890,9 +1770,7 @@ function Library:CreateWindow(options)
         Size = UDim2.new(1, 0, 0, 1),
         BorderSizePixel = 0,
         ZIndex = 1,
-    ThemeMap = {BackgroundColor3 = "InlineColor"},
-        ThemeMap = {BackgroundColor3 = "InlineColor"},
-        ThemeMap = {BackgroundColor3 = "InlineColor"}
+ThemeMap = {BackgroundColor3 = "InlineColor"}
     })
     local TabLineShadow = Create("Frame", {
         Parent = WindowBg,
@@ -1901,9 +1779,7 @@ function Library:CreateWindow(options)
         Size = UDim2.new(1, 0, 0, 1),
         BorderSizePixel = 0,
         ZIndex = 1,
-    ThemeMap = {BackgroundColor3 = "OutlineColor"},
-        ThemeMap = {BackgroundColor3 = "OutlineColor"},
-        ThemeMap = {BackgroundColor3 = "OutlineColor"}
+ThemeMap = {BackgroundColor3 = "OutlineColor"}
     })
 
     local ContentContainer = Create("Frame", {
@@ -1914,9 +1790,7 @@ function Library:CreateWindow(options)
         Size = UDim2.new(1, 0, 1, -44),
         BorderSizePixel = 0,
         ZIndex = 2,
-    ThemeMap = {BackgroundColor3 = "MainColor"},
-        ThemeMap = {BackgroundColor3 = "MainColor"},
-        ThemeMap = {BackgroundColor3 = "MainColor"}
+ThemeMap = {BackgroundColor3 = "MainColor"}
     })
 
     function WindowObj:CreateTab(name)
@@ -1941,9 +1815,7 @@ function Library:CreateWindow(options)
             BorderSizePixel = 0,
             Visible = false,
             ZIndex = 2,
-        ThemeMap = {BackgroundColor3 = "OutlineColor"},
-            ThemeMap = {BackgroundColor3 = "OutlineColor"},
-            ThemeMap = {BackgroundColor3 = "OutlineColor"}
+ThemeMap = {BackgroundColor3 = "OutlineColor"}
         })
         local TabInline = Create("Frame", {
             Parent = TabBorder,
@@ -1952,9 +1824,7 @@ function Library:CreateWindow(options)
             Size = UDim2.new(1, -2, 1, -2),
             BorderSizePixel = 0,
             ZIndex = 3,
-        ThemeMap = {BackgroundColor3 = "InlineColor"},
-            ThemeMap = {BackgroundColor3 = "InlineColor"},
-            ThemeMap = {BackgroundColor3 = "InlineColor"}
+ThemeMap = {BackgroundColor3 = "InlineColor"}
         })
         local TabBg = Create("Frame", {
             Parent = TabInline,
@@ -1963,9 +1833,7 @@ function Library:CreateWindow(options)
             Size = UDim2.new(1, -2, 1, 0),
             BorderSizePixel = 0,
             ZIndex = 4,
-        ThemeMap = {BackgroundColor3 = "MainColor"},
-            ThemeMap = {BackgroundColor3 = "MainColor"},
-            ThemeMap = {BackgroundColor3 = "MainColor"}
+ThemeMap = {BackgroundColor3 = "MainColor"}
         })
 
         local TabText = Create("TextLabel", {
@@ -1977,9 +1845,7 @@ function Library:CreateWindow(options)
             TextColor3 = Library.Theme.TextMuted,
             TextSize = 12,
             ZIndex = 5,
-        ThemeMap = {TextColor3 = "TextMuted"},
-            ThemeMap = {TextColor3 = "TextMuted"},
-            ThemeMap = {TextColor3 = "TextMuted"}
+ThemeMap = {TextColor3 = "TextMuted"}
         })
 
         local TabContent = Create("ScrollingFrame", {
@@ -2054,9 +1920,7 @@ function Library:CreateWindow(options)
                 BackgroundColor3 = Library.Theme.OutlineColor,
                 Size = UDim2.new(1, 0, 0, 20),
                 BorderSizePixel = 0,
-            ThemeMap = {BackgroundColor3 = "OutlineColor"},
-                ThemeMap = {BackgroundColor3 = "OutlineColor"},
-                ThemeMap = {BackgroundColor3 = "OutlineColor"}
+ThemeMap = {BackgroundColor3 = "OutlineColor"}
             })
             local GroupInline = Create("Frame", {
                 Parent = GroupBoxOutline,
@@ -2064,9 +1928,7 @@ function Library:CreateWindow(options)
                 Position = UDim2.new(0, 1, 0, 1),
                 Size = UDim2.new(1, -2, 1, -2),
                 BorderSizePixel = 0,
-            ThemeMap = {BackgroundColor3 = "InlineColor"},
-                ThemeMap = {BackgroundColor3 = "InlineColor"},
-                ThemeMap = {BackgroundColor3 = "InlineColor"}
+ThemeMap = {BackgroundColor3 = "InlineColor"}
             })
             local GroupBg = Create("Frame", {
                 Parent = GroupInline,
@@ -2074,9 +1936,7 @@ function Library:CreateWindow(options)
                 Position = UDim2.new(0, 1, 0, 1),
                 Size = UDim2.new(1, -2, 1, -2),
                 BorderSizePixel = 0,
-            ThemeMap = {BackgroundColor3 = "GroupBoxColor"},
-                ThemeMap = {BackgroundColor3 = "GroupBoxColor"},
-                ThemeMap = {BackgroundColor3 = "GroupBoxColor"}
+ThemeMap = {BackgroundColor3 = "GroupBoxColor"}
             })
 
             local titleBounds = GetTextBounds(groupName, Library.Theme.Font, 12)
@@ -2092,9 +1952,7 @@ function Library:CreateWindow(options)
                 TextColor3 = Library.Theme.TextColor,
                 TextSize = 12,
                 ZIndex = 5,
-            ThemeMap = {BackgroundColor3 = "MainColor", TextColor3 = "TextColor"},
-                ThemeMap = {BackgroundColor3 = "MainColor", TextColor3 = "TextColor"},
-                ThemeMap = {BackgroundColor3 = "MainColor", TextColor3 = "TextColor"}
+ThemeMap = {BackgroundColor3 = "MainColor", TextColor3 = "TextColor"}
             })
 
             local ElementContainer = Create("Frame", {
@@ -2141,9 +1999,7 @@ function Library:CreateWindow(options)
                 BackgroundColor3 = Library.Theme.OutlineColor,
                 Size = UDim2.new(1, 0, 0, 40),
                 BorderSizePixel = 0,
-            ThemeMap = {BackgroundColor3 = "OutlineColor"},
-                ThemeMap = {BackgroundColor3 = "OutlineColor"},
-                ThemeMap = {BackgroundColor3 = "OutlineColor"}
+ThemeMap = {BackgroundColor3 = "OutlineColor"}
             })
             local BoxInline = Create("Frame", {
                 Parent = BoxOutline,
@@ -2151,9 +2007,7 @@ function Library:CreateWindow(options)
                 Position = UDim2.new(0, 1, 0, 1),
                 Size = UDim2.new(1, -2, 1, -2),
                 BorderSizePixel = 0,
-            ThemeMap = {BackgroundColor3 = "InlineColor"},
-                ThemeMap = {BackgroundColor3 = "InlineColor"},
-                ThemeMap = {BackgroundColor3 = "InlineColor"}
+ThemeMap = {BackgroundColor3 = "InlineColor"}
             })
             local BoxBg = Create("Frame", {
                 Parent = BoxInline,
@@ -2161,9 +2015,7 @@ function Library:CreateWindow(options)
                 Position = UDim2.new(0, 1, 0, 1),
                 Size = UDim2.new(1, -2, 1, -2),
                 BorderSizePixel = 0,
-            ThemeMap = {BackgroundColor3 = "GroupBoxColor"},
-                ThemeMap = {BackgroundColor3 = "GroupBoxColor"},
-                ThemeMap = {BackgroundColor3 = "GroupBoxColor"}
+ThemeMap = {BackgroundColor3 = "GroupBoxColor"}
             })
             
             local TabButtonContainer = Create("Frame", {
@@ -2179,9 +2031,7 @@ function Library:CreateWindow(options)
                 Size = UDim2.new(1, 0, 0, 1),
                 BorderSizePixel = 0,
                 ZIndex = 2,
-            ThemeMap = {BackgroundColor3 = "InlineColor"},
-                ThemeMap = {BackgroundColor3 = "InlineColor"},
-                ThemeMap = {BackgroundColor3 = "InlineColor"}
+ThemeMap = {BackgroundColor3 = "InlineColor"}
             })
             local SepShadow = Create("Frame", {
                 Parent = BoxBg,
@@ -2190,9 +2040,7 @@ function Library:CreateWindow(options)
                 Size = UDim2.new(1, 0, 0, 1),
                 BorderSizePixel = 0,
                 ZIndex = 2,
-            ThemeMap = {BackgroundColor3 = "OutlineColor"},
-                ThemeMap = {BackgroundColor3 = "OutlineColor"},
-                ThemeMap = {BackgroundColor3 = "OutlineColor"}
+ThemeMap = {BackgroundColor3 = "OutlineColor"}
             })
             
             local ContentArea = Create("Frame", {
@@ -2226,9 +2074,7 @@ function Library:CreateWindow(options)
                     Text = name,
                     TextColor3 = Library.Theme.TextMuted,
                     TextSize = 12,
-                ThemeMap = {TextColor3 = "TextMuted"},
-                    ThemeMap = {TextColor3 = "TextMuted"},
-                    ThemeMap = {TextColor3 = "TextMuted"}
+ThemeMap = {TextColor3 = "TextMuted"}
                 })
 
                 local RightLine = Create("Frame", {
@@ -2237,9 +2083,7 @@ function Library:CreateWindow(options)
                     Position = UDim2.new(1, -1, 0, 0),
                     Size = UDim2.new(0, 1, 1, 0),
                     BorderSizePixel = 0,
-                ThemeMap = {BackgroundColor3 = "InlineColor"},
-                    ThemeMap = {BackgroundColor3 = "InlineColor"},
-                    ThemeMap = {BackgroundColor3 = "InlineColor"}
+ThemeMap = {BackgroundColor3 = "InlineColor"}
                 })
                 local RightShadow = Create("Frame", {
                     Parent = TabBtn,
@@ -2247,9 +2091,7 @@ function Library:CreateWindow(options)
                     Position = UDim2.new(1, 0, 0, 0),
                     Size = UDim2.new(0, 1, 1, 0),
                     BorderSizePixel = 0,
-                ThemeMap = {BackgroundColor3 = "OutlineColor"},
-                    ThemeMap = {BackgroundColor3 = "OutlineColor"},
-                    ThemeMap = {BackgroundColor3 = "OutlineColor"}
+ThemeMap = {BackgroundColor3 = "OutlineColor"}
                 })
 
                 local ActiveCover = Create("Frame", {
@@ -2260,9 +2102,7 @@ function Library:CreateWindow(options)
                     BorderSizePixel = 0,
                     Visible = false,
                     ZIndex = 3,
-                ThemeMap = {BackgroundColor3 = "GroupBoxColor"},
-                    ThemeMap = {BackgroundColor3 = "GroupBoxColor"},
-                    ThemeMap = {BackgroundColor3 = "GroupBoxColor"}
+ThemeMap = {BackgroundColor3 = "GroupBoxColor"}
                 })
 
                 local AccentLine = Create("Frame", {
@@ -2272,9 +2112,7 @@ function Library:CreateWindow(options)
                     BorderSizePixel = 0,
                     Visible = false,
                     ZIndex = 4,
-                ThemeMap = {BackgroundColor3 = "AccentColor"},
-                    ThemeMap = {BackgroundColor3 = "AccentColor"},
-                    ThemeMap = {BackgroundColor3 = "AccentColor"}
+ThemeMap = {BackgroundColor3 = "AccentColor"}
                 })
                 
                 Create("UIGradient", {
