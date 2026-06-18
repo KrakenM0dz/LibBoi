@@ -40,7 +40,7 @@ function ThemeManager:ApplyTheme(theme)
         local r = tonumber(hexStr:sub(1,2), 16) or 255
         local g = tonumber(hexStr:sub(3,4), 16) or 255
         local b = tonumber(hexStr:sub(5,6), 16) or 255
-        return Color3.fromRGB(r, g, b)
+        return Color3.new(r/255, g/255, b/255)
     end
 
     local customThemeData = {}
@@ -52,10 +52,10 @@ function ThemeManager:ApplyTheme(theme)
             if hexStr.R then
                 c = Color3.new(hexStr.R, hexStr.G, hexStr.B)
             elseif hexStr.r then
-                c = Color3.fromRGB(hexStr.r, hexStr.g, hexStr.b)
+                c = Color3.new(hexStr.r/255, hexStr.g/255, hexStr.b/255)
             elseif hexStr[1] then
                 if hexStr[1] > 1 or hexStr[2] > 1 or hexStr[3] > 1 then
-                    c = Color3.fromRGB(hexStr[1], hexStr[2], hexStr[3])
+                    c = Color3.new(hexStr[1]/255, hexStr[2]/255, hexStr[3]/255)
                 else
                     c = Color3.new(hexStr[1], hexStr[2], hexStr[3])
                 end
