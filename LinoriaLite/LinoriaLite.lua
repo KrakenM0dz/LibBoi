@@ -459,6 +459,9 @@ ThemeMap = {TextColor3 = "TextColor", PlaceholderColor3 = "TextMuted"}
                 BoxOutline.MouseLeave:Connect(function() WindowObj.HideTooltip() end)
             end
         }
+        TextBox:GetPropertyChangedSignal("Text"):Connect(function()
+            if Library.Options[idx] then Library.Options[idx].Value = TextBox.Text end
+        end)
         TextBox.FocusLost:Connect(function()
             if Library.Options[idx] then Library.Options[idx].Value = TextBox.Text end
             callback(TextBox.Text)
