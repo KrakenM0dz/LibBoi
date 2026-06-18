@@ -141,6 +141,19 @@ function SaveManager:BuildConfigSection(Tab)
         end
     end)
     
+    ConfigGroup:AddButton("Delete config", function()
+        local name = cfgList.Value
+        if name and name ~= "" then
+            local path = self.Folder .. "/" .. name .. ".json"
+            if isfile and isfile(path) and delfile then
+                delfile(path)
+                cfgList:RefreshOptions(self:RefreshConfigList())
+                cfgList:SetValue(self:RefreshConfigList()[1] or "")
+                self.Library:Notify("Deleted config: " .. name)
+            end
+        end
+    end)
+    
     ConfigGroup:AddButton("Refresh list", function()
         cfgList:RefreshOptions(self:RefreshConfigList())
     end)
