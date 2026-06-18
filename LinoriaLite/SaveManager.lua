@@ -7,6 +7,7 @@ SaveManager.Ignore = {}
 
 function SaveManager:SetLibrary(lib)
     self.Library = lib
+    self:IgnoreThemeSettings()
 end
 
 function SaveManager:SetFolder(folderName)
