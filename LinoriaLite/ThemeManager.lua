@@ -51,8 +51,28 @@ function ThemeManager:ApplyTheme(theme)
         customThemeData.FontColor = nil
     end
 
+    if customThemeData.BackgroundColor then
+        customThemeData.GroupBoxColor = customThemeData.BackgroundColor
+    end
+
+    if customThemeData.MainColor then
+        customThemeData.InlineColor = Color3.new(
+            math.clamp(customThemeData.MainColor.R + (30/255), 0, 1),
+            math.clamp(customThemeData.MainColor.G + (30/255), 0, 1),
+            math.clamp(customThemeData.MainColor.B + (30/255), 0, 1)
+        )
+    end
+
+    if customThemeData.TextColor then
+        customThemeData.TextMuted = Color3.new(
+            customThemeData.TextColor.R * 0.588,
+            customThemeData.TextColor.G * 0.588,
+            customThemeData.TextColor.B * 0.588
+        )
+    end
+
     for key, color in pairs(customThemeData) do
-        if self.Library.Theme[key] then
+        if self.Library.Theme[key] ~= nil then
             self.Library:UpdateTheme(key, color)
             
             -- update color pickers if they exist
@@ -132,10 +152,17 @@ function ThemeManager:BuildThemeSection(Tab)
     
     ThemeGroup:AddColorPicker("Background color", self.Library.Theme.BackgroundColor, function(color)
         self.Library:UpdateTheme("BackgroundColor", color)
+        self.Library:UpdateTheme("GroupBoxColor", color)
     end, "ThemeManager_BackgroundColor")
     
     ThemeGroup:AddColorPicker("Main color", self.Library.Theme.MainColor, function(color)
         self.Library:UpdateTheme("MainColor", color)
+        local inline = Color3.new(
+            math.clamp(color.R + (30/255), 0, 1),
+            math.clamp(color.G + (30/255), 0, 1),
+            math.clamp(color.B + (30/255), 0, 1)
+        )
+        self.Library:UpdateTheme("InlineColor", inline)
     end, "ThemeManager_MainColor")
     
     ThemeGroup:AddColorPicker("Accent color", self.Library.Theme.AccentColor, function(color)
@@ -148,6 +175,12 @@ function ThemeManager:BuildThemeSection(Tab)
     
     ThemeGroup:AddColorPicker("Font color", self.Library.Theme.TextColor, function(color)
         self.Library:UpdateTheme("TextColor", color)
+        local muted = Color3.new(
+            color.R * 0.588,
+            color.G * 0.588,
+            color.B * 0.588
+        )
+        self.Library:UpdateTheme("TextMuted", muted)
     end, "ThemeManager_TextColor")
     
     local builtinList = {}
