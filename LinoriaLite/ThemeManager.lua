@@ -147,8 +147,14 @@ function ThemeManager:LoadDefaultTheme()
         if success and content ~= "" then
             if self.BuiltInThemes[content] then
                 self:ApplyTheme(self.BuiltInThemes[content])
+                if self.Library.Options.ThemeManager_ThemeList then
+                    self.Library.Options.ThemeManager_ThemeList:SetValue(content)
+                end
             else
                 self:LoadCustomTheme(content)
+                if self.Library.Options.ThemeManager_CustomThemeList then
+                    self.Library.Options.ThemeManager_CustomThemeList:SetValue(content)
+                end
             end
         end
     end
@@ -214,6 +220,19 @@ function ThemeManager:BuildThemeSection(Tab)
                 self.Library:Notify("Loaded custom theme: " .. name)
             else
                 self.Library:Notify("Failed to load theme: " .. name)
+            end
+        end
+    end)
+    
+    ThemeGroup:AddButton("Delete theme", function()
+        local name = customList.Value
+        if name and name ~= "" then
+            local path = self.Folder .. "/themes/" .. name .. ".json"
+            if isfile and isfile(path) and delfile then
+                delfile(path)
+                customList:RefreshOptions(self:RefreshCustomThemes())
+                customList:SetValue(self:RefreshCustomThemes()[1] or "")
+                self.Library:Notify("Deleted custom theme: " .. name)
             end
         end
     end)
