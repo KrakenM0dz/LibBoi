@@ -106,7 +106,7 @@ function ThemeManager:ApplyTheme(theme)
                     local g = color.G or color.g or color[2] or 1
                     local b = color.B or color.b or color[3] or 1
                     if r > 1 or g > 1 or b > 1 then
-                        finalColor = Color3.fromRGB(r, g, b)
+                        finalColor = Color3.new(r/255, g/255, b/255)
                     else
                         finalColor = Color3.new(r, g, b)
                     end
