@@ -844,6 +844,9 @@ ThemeMap = {BackgroundColor3 = "GroupBoxColor"}
             UpdateColors = function()
                 Label.TextColor3 = Library.Theme.TextColor
                 SelectedLabel.TextColor3 = Library.Theme.TextMuted
+                for _, b in pairs(optionButtons) do
+                    b.TextColor3 = (string.sub(b.Text, 3) == tostring(selected)) and Library.Theme.AccentColor or Library.Theme.TextColor
+                end
             end,
             Save = function(self) return self.Value end,
             Load = function(self, val) self.SetValue(val) end,
@@ -1103,6 +1106,10 @@ ThemeMap = {BackgroundColor3 = "GroupBoxColor"}
             UpdateColors = function()
                 Label.TextColor3 = Library.Theme.TextColor
                 SelectedLabel.TextColor3 = Library.Theme.TextMuted
+                for _, b in pairs(optionButtons) do
+                    local optText = string.sub(b.Text, 7)
+                    b.TextColor3 = selected[optText] and Library.Theme.AccentColor or Library.Theme.TextColor
+                end
             end,
             Save = function(self)
                 local res = {}
