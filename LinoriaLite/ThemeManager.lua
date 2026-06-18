@@ -40,7 +40,7 @@ function ThemeManager:ApplyTheme(theme)
         local r = tonumber(hexStr:sub(1,2), 16) or 255
         local g = tonumber(hexStr:sub(3,4), 16) or 255
         local b = tonumber(hexStr:sub(5,6), 16) or 255
-        return Color3.fromRGB(r/255, g/255, b/255)
+        return Color3.fromRGB(r, g, b)
     end
 
     local customThemeData = {}
@@ -52,12 +52,12 @@ function ThemeManager:ApplyTheme(theme)
             if hexStr.R then
                 c = Color3.fromRGB(hexStr.R, hexStr.G, hexStr.B)
             elseif hexStr.r then
-                c = Color3.fromRGB(hexStr.r/255, hexStr.g/255, hexStr.b/255)
+                c = Color3.fromRGB(hexStr.r, hexStr.g, hexStr.b)
             elseif hexStr[1] then
                 if hexStr[1] > 1 or hexStr[2] > 1 or hexStr[3] > 1 then
-                    c = Color3.fromRGB(hexStr[1]/255, hexStr[2]/255, hexStr[3]/255)
-                else
                     c = Color3.fromRGB(hexStr[1], hexStr[2], hexStr[3])
+                else
+                    c = Color3.new(hexStr[1], hexStr[2], hexStr[3])
                 end
             end
         elseif typeof(hexStr) == "Color3" then
@@ -78,7 +78,7 @@ function ThemeManager:ApplyTheme(theme)
     end
 
     if customThemeData.MainColor then
-        customThemeData.InlineColor = Color3.fromRGB(
+        customThemeData.InlineColor = Color3.new(
             math.clamp((customThemeData.MainColor.R) + (30/255), 0, 1),
             math.clamp((customThemeData.MainColor.G) + (30/255), 0, 1),
             math.clamp((customThemeData.MainColor.B) + (30/255), 0, 1)
@@ -86,7 +86,7 @@ function ThemeManager:ApplyTheme(theme)
     end
 
     if customThemeData.TextColor then
-        customThemeData.TextMuted = Color3.fromRGB(
+        customThemeData.TextMuted = Color3.new(
             (customThemeData.TextColor.R) * 0.588,
             (customThemeData.TextColor.G) * 0.588,
             (customThemeData.TextColor.B) * 0.588
@@ -106,9 +106,9 @@ function ThemeManager:ApplyTheme(theme)
                     local g = color.G or color.g or color[2] or 1
                     local b = color.B or color.b or color[3] or 1
                     if r > 1 or g > 1 or b > 1 then
-                        finalColor = Color3.fromRGB(r/255, g/255, b/255)
-                    else
                         finalColor = Color3.fromRGB(r, g, b)
+                    else
+                        finalColor = Color3.new(r, g, b)
                     end
                 end
                 
@@ -198,7 +198,7 @@ function ThemeManager:BuildThemeSection(Tab)
     
     ThemeGroup:AddColorPicker("Main color", self.Library.Theme.MainColor, function(color)
         self.Library:UpdateTheme("MainColor", color)
-        local inline = Color3.fromRGB(
+        local inline = Color3.new(
             math.clamp((color.R) + (30/255), 0, 1),
             math.clamp((color.G) + (30/255), 0, 1),
             math.clamp((color.B) + (30/255), 0, 1)
@@ -216,7 +216,7 @@ function ThemeManager:BuildThemeSection(Tab)
     
     ThemeGroup:AddColorPicker("Font color", self.Library.Theme.TextColor, function(color)
         self.Library:UpdateTheme("TextColor", color)
-        local muted = Color3.fromRGB(
+        local muted = Color3.new(
             (color.R) * 0.588,
             (color.G) * 0.588,
             (color.B) * 0.588
