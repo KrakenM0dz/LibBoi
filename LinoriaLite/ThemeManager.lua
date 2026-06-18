@@ -5,62 +5,14 @@ ThemeManager.Folder = "LinoriaLiteSettings"
 ThemeManager.Library = nil
 
 ThemeManager.BuiltInThemes = {
-    ["Default"] = {
-        TextColor = Color3.fromHex("ffffff"),
-        MainColor = Color3.fromHex("1c1c1c"),
-        AccentColor = Color3.fromHex("0055ff"),
-        BackgroundColor = Color3.fromHex("141414"),
-        OutlineColor = Color3.fromHex("323232"),
-    },
-    ["BBot"] = {
-        TextColor = Color3.fromHex("ffffff"),
-        MainColor = Color3.fromHex("1e1e1e"),
-        AccentColor = Color3.fromHex("7e48a3"),
-        BackgroundColor = Color3.fromHex("232323"),
-        OutlineColor = Color3.fromHex("141414"),
-    },
-    ["Fatality"] = {
-        TextColor = Color3.fromHex("ffffff"),
-        MainColor = Color3.fromHex("1e1842"),
-        AccentColor = Color3.fromHex("c50754"),
-        BackgroundColor = Color3.fromHex("191335"),
-        OutlineColor = Color3.fromHex("3c355d"),
-    },
-    ["Jester"] = {
-        TextColor = Color3.fromHex("ffffff"),
-        MainColor = Color3.fromHex("242424"),
-        AccentColor = Color3.fromHex("db4467"),
-        BackgroundColor = Color3.fromHex("1c1c1c"),
-        OutlineColor = Color3.fromHex("373737"),
-    },
-    ["Mint"] = {
-        TextColor = Color3.fromHex("ffffff"),
-        MainColor = Color3.fromHex("242424"),
-        AccentColor = Color3.fromHex("3db488"),
-        BackgroundColor = Color3.fromHex("1c1c1c"),
-        OutlineColor = Color3.fromHex("373737"),
-    },
-    ["Tokyo Night"] = {
-        TextColor = Color3.fromHex("ffffff"),
-        MainColor = Color3.fromHex("191925"),
-        AccentColor = Color3.fromHex("6759b3"),
-        BackgroundColor = Color3.fromHex("16161f"),
-        OutlineColor = Color3.fromHex("323232"),
-    },
-    ["Ubuntu"] = {
-        TextColor = Color3.fromHex("ffffff"),
-        MainColor = Color3.fromHex("3e3e3e"),
-        AccentColor = Color3.fromHex("e2581e"),
-        BackgroundColor = Color3.fromHex("323232"),
-        OutlineColor = Color3.fromHex("191919"),
-    },
-    ["Quartz"] = {
-        TextColor = Color3.fromHex("ffffff"),
-        MainColor = Color3.fromHex("232330"),
-        AccentColor = Color3.fromHex("426e87"),
-        BackgroundColor = Color3.fromHex("1d1b26"),
-        OutlineColor = Color3.fromHex("27232f"),
-    },
+    ['Default'] 		= { 1, HttpService:JSONDecode('{"FontColor":"ffffff","MainColor":"1c1c1c","AccentColor":"0055ff","BackgroundColor":"141414","OutlineColor":"323232"}') },
+    ['BBot'] 			= { 2, HttpService:JSONDecode('{"FontColor":"ffffff","MainColor":"1e1e1e","AccentColor":"7e48a3","BackgroundColor":"232323","OutlineColor":"141414"}') },
+    ['Fatality']		= { 3, HttpService:JSONDecode('{"FontColor":"ffffff","MainColor":"1e1842","AccentColor":"c50754","BackgroundColor":"191335","OutlineColor":"3c355d"}') },
+    ['Jester'] 			= { 4, HttpService:JSONDecode('{"FontColor":"ffffff","MainColor":"242424","AccentColor":"db4467","BackgroundColor":"1c1c1c","OutlineColor":"373737"}') },
+    ['Mint'] 			= { 5, HttpService:JSONDecode('{"FontColor":"ffffff","MainColor":"242424","AccentColor":"3db488","BackgroundColor":"1c1c1c","OutlineColor":"373737"}') },
+    ['Tokyo Night'] 	= { 6, HttpService:JSONDecode('{"FontColor":"ffffff","MainColor":"191925","AccentColor":"6759b3","BackgroundColor":"16161f","OutlineColor":"323232"}') },
+    ['Ubuntu'] 			= { 7, HttpService:JSONDecode('{"FontColor":"ffffff","MainColor":"3e3e3e","AccentColor":"e2581e","BackgroundColor":"323232","OutlineColor":"191919"}') },
+    ['Quartz'] 			= { 8, HttpService:JSONDecode('{"FontColor":"ffffff","MainColor":"232330","AccentColor":"426e87","BackgroundColor":"1d1b26","OutlineColor":"27232f"}') },
 }
 
 function ThemeManager:SetLibrary(lib)
@@ -77,8 +29,29 @@ function ThemeManager:SetFolder(folderName)
     end
 end
 
-function ThemeManager:ApplyTheme(themeData)
-    for key, color in pairs(themeData) do
+function ThemeManager:ApplyTheme(theme)
+    local themeData = theme
+    if type(theme) == "table" and theme[2] then
+        themeData = theme[2]
+    end
+
+    local customThemeData = {}
+    for key, hexStr in pairs(themeData) do
+        if type(hexStr) == "string" then
+            customThemeData[key] = Color3.fromHex(hexStr)
+        elseif type(hexStr) == "table" and hexStr.R then
+            customThemeData[key] = Color3.new(hexStr.R, hexStr.G, hexStr.B)
+        else
+            customThemeData[key] = hexStr
+        end
+    end
+
+    if customThemeData.FontColor then
+        customThemeData.TextColor = customThemeData.FontColor
+        customThemeData.FontColor = nil
+    end
+
+    for key, color in pairs(customThemeData) do
         if self.Library.Theme[key] then
             self.Library:UpdateTheme(key, color)
             
@@ -109,11 +82,11 @@ end
 function ThemeManager:SaveCustomTheme(name)
     if not writefile then return false end
     local themeData = {
-        BackgroundColor = {R = self.Library.Theme.BackgroundColor.R, G = self.Library.Theme.BackgroundColor.G, B = self.Library.Theme.BackgroundColor.B},
-        MainColor = {R = self.Library.Theme.MainColor.R, G = self.Library.Theme.MainColor.G, B = self.Library.Theme.MainColor.B},
-        AccentColor = {R = self.Library.Theme.AccentColor.R, G = self.Library.Theme.AccentColor.G, B = self.Library.Theme.AccentColor.B},
-        OutlineColor = {R = self.Library.Theme.OutlineColor.R, G = self.Library.Theme.OutlineColor.G, B = self.Library.Theme.OutlineColor.B},
-        TextColor = {R = self.Library.Theme.TextColor.R, G = self.Library.Theme.TextColor.G, B = self.Library.Theme.TextColor.B},
+        BackgroundColor = self.Library.Theme.BackgroundColor:ToHex(),
+        MainColor = self.Library.Theme.MainColor:ToHex(),
+        AccentColor = self.Library.Theme.AccentColor:ToHex(),
+        OutlineColor = self.Library.Theme.OutlineColor:ToHex(),
+        FontColor = self.Library.Theme.TextColor:ToHex(),
     }
     local success, encoded = pcall(HttpService.JSONEncode, HttpService, themeData)
     if success then
@@ -131,13 +104,7 @@ function ThemeManager:LoadCustomTheme(name)
     local decodedSuccess, data = pcall(HttpService.JSONDecode, HttpService, content)
     if not decodedSuccess or type(data) ~= "table" then return false end
     
-    local themeData = {}
-    for k, v in pairs(data) do
-        if type(v) == "table" and v.R then
-            themeData[k] = Color3.new(v.R, v.G, v.B)
-        end
-    end
-    self:ApplyTheme(themeData)
+    self:ApplyTheme(data)
     return true
 end
 
@@ -184,7 +151,9 @@ function ThemeManager:BuildThemeSection(Tab)
     end, "ThemeManager_TextColor")
     
     local builtinList = {}
-    for k, _ in pairs(self.BuiltInThemes) do table.insert(builtinList, k) end
+    for k, v in pairs(self.BuiltInThemes) do 
+        builtinList[v[1]] = k 
+    end
     
     ThemeGroup:AddDropdown("Theme list", builtinList, "Default", function(theme)
         if self.BuiltInThemes[theme] then
