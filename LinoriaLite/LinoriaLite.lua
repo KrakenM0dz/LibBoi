@@ -438,9 +438,33 @@ ThemeMap = {BackgroundColor3 = "GroupBoxColor"}
 ThemeMap = {TextColor3 = "TextColor", PlaceholderColor3 = "TextMuted"}
         })
 
-        TextBox.FocusLost:Connect(function() callback(TextBox.Text) end)
-        
-        return { SetValue = function(text) TextBox.Text = tostring(text); callback(TextBox.Text) end }
+        local obj = {
+            Type = "Input",
+            Value = default,
+            UpdateColors = function()
+                Label.TextColor3 = Library.Theme.TextColor
+                TextBox.TextColor3 = Library.Theme.TextColor
+                TextBox.PlaceholderColor3 = Library.Theme.TextMuted
+            end,
+            Save = function(self) return self.Value end,
+            Load = function(self, val) self.SetValue(val) end,
+            SetValue = function(text) 
+                TextBox.Text = tostring(text)
+                if Library.Options[idx] then Library.Options[idx].Value = TextBox.Text end
+                callback(TextBox.Text) 
+            end,
+            AddTooltip = function(self, text)
+                if not text or text == "" then return end
+                BoxOutline.MouseEnter:Connect(function() WindowObj.ShowTooltip(text) end)
+                BoxOutline.MouseLeave:Connect(function() WindowObj.HideTooltip() end)
+            end
+        }
+        TextBox.FocusLost:Connect(function()
+            if Library.Options[idx] then Library.Options[idx].Value = TextBox.Text end
+            callback(TextBox.Text)
+        end)
+        Library.Options[idx] = obj
+        return obj
     end
 
     function Obj:AddSlider(name, min, max, default, callback, idx)
@@ -1376,6 +1400,7 @@ ThemeMap = {BackgroundColor3 = "OutlineColor"}
             SVBg.BackgroundColor3 = Color3.fromHSV(h, 1, 1)
             SVCursor.Position = UDim2.new(math.clamp(s, 0, 1), -2, math.clamp(1 - v, 0, 1), -2)
             HueCursor.Position = UDim2.new(math.clamp(h, 0, 1), -1, 0, 0)
+            if Library.Options[idx] then Library.Options[idx].Value = c end
             callback(c)
         end
 
@@ -1460,6 +1485,9 @@ ThemeMap = {BackgroundColor3 = "OutlineColor"}
         local obj = {
             Type = "ColorPicker",
             Value = default,
+            UpdateColors = function()
+                Label.TextColor3 = Library.Theme.TextColor
+            end,
             Save = function(self) return {R = self.Value.R, G = self.Value.G, B = self.Value.B} end,
             Load = function(self, val)
                 if type(val) == "table" and val.R then
@@ -1469,8 +1497,15 @@ ThemeMap = {BackgroundColor3 = "OutlineColor"}
             SetValue = function(c)
                 h, s, v = Color3.toHSV(c)
                 UpdateColor()
+            end,
+            AddTooltip = function(self, text)
+                if not text or text == "" then return end
+                BoxOutline.MouseEnter:Connect(function() WindowObj.ShowTooltip(text) end)
+                BoxOutline.MouseLeave:Connect(function() WindowObj.HideTooltip() end)
             end
         }
+        Library.Options[idx] = obj
+        return obj
     end
 end
 
