@@ -1505,6 +1505,16 @@ ThemeMap = {BackgroundColor3 = "OutlineColor"}
                 end
             end,
             SetValue = function(c)
+                if type(c) == "table" then
+                    local r = c.R or c.r or c[1] or 1
+                    local g = c.G or c.g or c[2] or 1
+                    local b = c.B or c.b or c[3] or 1
+                    if r > 1 or g > 1 or b > 1 then
+                        c = Color3.fromRGB(r, g, b)
+                    else
+                        c = Color3.new(r, g, b)
+                    end
+                end
                 h, s, v = Color3.toHSV(c)
                 UpdateColor()
             end,
