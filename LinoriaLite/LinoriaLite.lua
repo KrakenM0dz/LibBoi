@@ -224,7 +224,7 @@ ThemeMap = {BackgroundColor3 = "InlineColor"}
         SetState(state)
         
         local ToggleObj = { 
-            SetValue = function(newState) SetState(newState) end,
+            SetValue = function(self, newState) SetState(newState) end,
             AddTooltip = function(self, text)
                 if not text or text == "" then return end
                 Button.MouseEnter:Connect(function() WindowObj.ShowTooltip(text) end)
@@ -297,7 +297,7 @@ ThemeMap = {TextColor3 = "TextMuted"}
             Label.TextColor3 = targetText
         end
         ToggleObj.Save = function(self) return self.Value end
-        ToggleObj.Load = function(self, val) self.SetValue(val) end
+        ToggleObj.Load = function(self, val) self:SetValue(val) end
         Library.Options[idx] = ToggleObj
         return ToggleObj
     end
@@ -447,8 +447,8 @@ ThemeMap = {TextColor3 = "TextColor", PlaceholderColor3 = "TextMuted"}
                 TextBox.PlaceholderColor3 = Library.Theme.TextMuted
             end,
             Save = function(self) return self.Value end,
-            Load = function(self, val) self.SetValue(val) end,
-            SetValue = function(text) 
+            Load = function(self, val) self:SetValue(val) end,
+            SetValue = function(self, text) 
                 TextBox.Text = tostring(text)
                 if Library.Options[idx] then Library.Options[idx].Value = TextBox.Text end
                 callback(TextBox.Text) 
@@ -610,9 +610,9 @@ ThemeMap = {Color = "OutlineColor"}
                 ValueLabel.TextColor3 = Library.Theme.TextColor
                 Label.TextColor3 = Library.Theme.TextColor
             end,
-            SetValue = function(newVal) UpdateSlider(newVal, false) end,
+            SetValue = function(self, newVal) UpdateSlider(newVal, false) end,
             Save = function(self) return self.Value end,
-            Load = function(self, val) self.SetValue(val) end,
+            Load = function(self, val) self:SetValue(val) end,
             AddTooltip = function(self, text)
                 if not text or text == "" then return end
                 SliderOutline.MouseEnter:Connect(function() WindowObj.ShowTooltip(text) end)
@@ -849,8 +849,8 @@ ThemeMap = {BackgroundColor3 = "GroupBoxColor"}
                 end
             end,
             Save = function(self) return self.Value end,
-            Load = function(self, val) self.SetValue(val) end,
-            SetValue = function(newVal)
+            Load = function(self, val) self:SetValue(val) end,
+            SetValue = function(self, newVal)
                 selected = newVal
                 if Library.Options[idx] then Library.Options[idx].Value = newVal end
                 SelectedLabel.Text = tostring(newVal)
@@ -1116,8 +1116,8 @@ ThemeMap = {BackgroundColor3 = "GroupBoxColor"}
                 for k, v in pairs(self.Value) do if v then table.insert(res, k) end end
                 return res
             end,
-            Load = function(self, val) self.SetValue(val) end,
-            SetValue = function(newTable)
+            Load = function(self, val) self:SetValue(val) end,
+            SetValue = function(self, newTable)
                 selected = {}
                 for _, v in ipairs(newTable) do selected[v] = true end
                 SetOptions(options)
@@ -1207,10 +1207,10 @@ ThemeMap = {TextColor3 = "TextMuted"}
             Save = function(self) return self.Value end,
             Load = function(self, val)
                 if type(val) == "string" and Enum.KeyCode[val] then
-                    self.SetValue(Enum.KeyCode[val])
+                    self:SetValue(Enum.KeyCode[val])
                 end
             end,
-            SetValue = function(k)
+            SetValue = function(self, k)
                 if Library.Options[idx] then Library.Options[idx].Value = k.Name end
                 key = k
                 ValueLabel.Text = "[" .. (key.Name == "Unknown" and "None" or key.Name) .. "]"
@@ -1501,10 +1501,10 @@ ThemeMap = {BackgroundColor3 = "OutlineColor"}
             Save = function(self) return {R = self.Value.R, G = self.Value.G, B = self.Value.B} end,
             Load = function(self, val)
                 if type(val) == "table" and val.R then
-                    self.SetValue(Color3.new(val.R, val.G, val.B))
+                    self:SetValue(Color3.new(val.R, val.G, val.B))
                 end
             end,
-            SetValue = function(c)
+            SetValue = function(self, c)
                 if type(c) == "table" then
                     local r = c.R or c.r or c[1] or 1
                     local g = c.G or c.g or c[2] or 1
