@@ -78,10 +78,10 @@ function ThemeManager:ApplyTheme(theme)
     end
 
     if customThemeData.MainColor then
-        customThemeData.InlineColor = Color3.new(
-            math.clamp(customThemeData.MainColor.R + (30/255), 0, 1),
-            math.clamp(customThemeData.MainColor.G + (30/255), 0, 1),
-            math.clamp(customThemeData.MainColor.B + (30/255), 0, 1)
+        customThemeData.InlineColor = Color3.fromRGB(
+            math.clamp((customThemeData.MainColor.R * 255) + 30, 0, 255),
+            math.clamp((customThemeData.MainColor.G * 255) + 30, 0, 255),
+            math.clamp((customThemeData.MainColor.B * 255) + 30, 0, 255)
         )
     end
 
@@ -216,10 +216,10 @@ function ThemeManager:BuildThemeSection(Tab)
     
     ThemeGroup:AddColorPicker("Font color", self.Library.Theme.TextColor, function(color)
         self.Library:UpdateTheme("TextColor", color)
-        local muted = Color3.new(
-            color.R * 0.588,
-            color.G * 0.588,
-            color.B * 0.588
+        local muted = Color3.fromRGB(
+            (color.R * 255) * 0.588,
+            (color.G * 255) * 0.588,
+            (color.B * 255) * 0.588
         )
         self.Library:UpdateTheme("TextMuted", muted)
     end, "ThemeManager_TextColor")
