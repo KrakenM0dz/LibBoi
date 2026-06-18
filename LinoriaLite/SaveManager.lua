@@ -7,7 +7,6 @@ SaveManager.Ignore = {}
 
 function SaveManager:SetLibrary(lib)
     self.Library = lib
-    self:IgnoreThemeSettings()
 end
 
 function SaveManager:SetFolder(folderName)
@@ -72,12 +71,25 @@ function SaveManager:Load(name)
     local decodedSuccess, data = pcall(HttpService.JSONDecode, HttpService, content)
     if not decodedSuccess or type(data) ~= "table" then return false end
     
-    for idx, savedObj in pairs(data) do
+    local function loadOption(idx, savedObj)
         local obj = self.Library.Options[idx]
         if obj and obj.Type == savedObj.Type and not self.Ignore[idx] then
             if type(obj.Load) == "function" then
                 obj:Load(savedObj.Value)
             end
+        end
+    end
+
+    if data["ThemeManager_ThemeList"] then
+        loadOption("ThemeManager_ThemeList", data["ThemeManager_ThemeList"])
+    end
+    if data["ThemeManager_CustomThemeList"] then
+        loadOption("ThemeManager_CustomThemeList", data["ThemeManager_CustomThemeList"])
+    end
+
+    for idx, savedObj in pairs(data) do
+        if idx ~= "ThemeManager_ThemeList" and idx ~= "ThemeManager_CustomThemeList" then
+            loadOption(idx, savedObj)
         end
     end
     return true
