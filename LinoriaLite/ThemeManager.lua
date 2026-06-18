@@ -45,12 +45,26 @@ function ThemeManager:ApplyTheme(theme)
 
     local customThemeData = {}
     for key, hexStr in pairs(themeData) do
+        local c = nil
         if type(hexStr) == "string" then
-            customThemeData[key] = parseHex(hexStr)
-        elseif type(hexStr) == "table" and hexStr.R then
-            customThemeData[key] = Color3.new(hexStr.R, hexStr.G, hexStr.B)
-        else
-            customThemeData[key] = hexStr
+            c = parseHex(hexStr)
+        elseif type(hexStr) == "table" then
+            if hexStr.R then
+                c = Color3.new(hexStr.R, hexStr.G, hexStr.B)
+            elseif hexStr.r then
+                c = Color3.fromRGB(hexStr.r, hexStr.g, hexStr.b)
+            elseif hexStr[1] then
+                if hexStr[1] > 1 or hexStr[2] > 1 or hexStr[3] > 1 then
+                    c = Color3.fromRGB(hexStr[1], hexStr[2], hexStr[3])
+                else
+                    c = Color3.new(hexStr[1], hexStr[2], hexStr[3])
+                end
+            end
+        elseif typeof(hexStr) == "Color3" then
+            c = hexStr
+        end
+        if c then
+            customThemeData[key] = c
         end
     end
 
