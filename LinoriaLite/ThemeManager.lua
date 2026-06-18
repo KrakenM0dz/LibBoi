@@ -100,7 +100,21 @@ function ThemeManager:ApplyTheme(theme)
             -- update color pickers if they exist
             local picker = self.Library.Options["ThemeManager_" .. key]
             if picker then
-                picker:SetValue(color)
+                local finalColor = color
+                if type(color) == "table" then
+                    local r = color.R or color.r or color[1] or 1
+                    local g = color.G or color.g or color[2] or 1
+                    local b = color.B or color.b or color[3] or 1
+                    if r > 1 or g > 1 or b > 1 then
+                        finalColor = Color3.fromRGB(r, g, b)
+                    else
+                        finalColor = Color3.new(r, g, b)
+                    end
+                end
+                
+                if typeof(finalColor) == "Color3" then
+                    pcall(function() picker:SetValue(finalColor) end)
+                end
             end
         end
     end
