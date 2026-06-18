@@ -35,10 +35,18 @@ function ThemeManager:ApplyTheme(theme)
         themeData = theme[2]
     end
 
+    local function parseHex(hexStr)
+        hexStr = hexStr:gsub("#","")
+        local r = tonumber(hexStr:sub(1,2), 16) or 255
+        local g = tonumber(hexStr:sub(3,4), 16) or 255
+        local b = tonumber(hexStr:sub(5,6), 16) or 255
+        return Color3.fromRGB(r, g, b)
+    end
+
     local customThemeData = {}
     for key, hexStr in pairs(themeData) do
         if type(hexStr) == "string" then
-            customThemeData[key] = Color3.fromHex(hexStr)
+            customThemeData[key] = parseHex(hexStr)
         elseif type(hexStr) == "table" and hexStr.R then
             customThemeData[key] = Color3.new(hexStr.R, hexStr.G, hexStr.B)
         else
@@ -101,12 +109,17 @@ end
 
 function ThemeManager:SaveCustomTheme(name)
     if not writefile then return false end
+    
+    local function toHex(color)
+        return string.format("%02x%02x%02x", math.floor(color.R*255), math.floor(color.G*255), math.floor(color.B*255))
+    end
+    
     local themeData = {
-        BackgroundColor = self.Library.Theme.BackgroundColor:ToHex(),
-        MainColor = self.Library.Theme.MainColor:ToHex(),
-        AccentColor = self.Library.Theme.AccentColor:ToHex(),
-        OutlineColor = self.Library.Theme.OutlineColor:ToHex(),
-        FontColor = self.Library.Theme.TextColor:ToHex(),
+        BackgroundColor = toHex(self.Library.Theme.BackgroundColor),
+        MainColor = toHex(self.Library.Theme.MainColor),
+        AccentColor = toHex(self.Library.Theme.AccentColor),
+        OutlineColor = toHex(self.Library.Theme.OutlineColor),
+        FontColor = toHex(self.Library.Theme.TextColor),
     }
     local success, encoded = pcall(HttpService.JSONEncode, HttpService, themeData)
     if success then
