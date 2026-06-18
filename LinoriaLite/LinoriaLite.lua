@@ -1510,7 +1510,7 @@ ThemeMap = {BackgroundColor3 = "OutlineColor"}
                     local g = c.G or c.g or c[2] or 1
                     local b = c.B or c.b or c[3] or 1
                     if r > 1 or g > 1 or b > 1 then
-                        c = Color3.fromRGB(r, g, b)
+                        c = Color3.new(r/255, g/255, b/255)
                     else
                         c = Color3.new(r, g, b)
                     end
