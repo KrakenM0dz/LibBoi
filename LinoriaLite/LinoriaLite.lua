@@ -71,6 +71,82 @@ local function GetTextBounds(text, font, size)
     return TextService:GetTextSize(text, size, font, Vector2.new(9999, 9999))
 end
 
+-- =====================================================================
+-- Keybind helpers: short display names + mouse-button (M1/M2/M3) support
+-- =====================================================================
+-- A "bind" is either an Enum.KeyCode or an Enum.UserInputType (mouse buttons).
+Library.KeyShortNames = {
+    -- Mouse buttons
+    MouseButton1 = "M1",
+    MouseButton2 = "M2",
+    MouseButton3 = "M3",
+    -- Modifiers
+    LeftControl = "Ctrl", RightControl = "RCtrl",
+    LeftShift = "Shift",  RightShift = "RShift",
+    LeftAlt = "Alt",      RightAlt = "RAlt",
+    LeftSuper = "Win",    RightSuper = "RWin",
+    LeftMeta = "Meta",    RightMeta = "RMeta",
+    -- Navigation / editing
+    Return = "Enter", Escape = "Esc", Backspace = "Bksp",
+    Delete = "Del", Insert = "Ins", PageUp = "PgUp", PageDown = "PgDn",
+    CapsLock = "Caps", PrintScreen = "PrtSc",
+    -- Arrows
+    Up = "Up", Down = "Down", Left = "Left", Right = "Right",
+}
+
+-- True when a bind actually points at a key/button.
+local function IsBound(bind)
+    return bind ~= nil and typeof(bind) == "EnumItem" and bind ~= Enum.KeyCode.Unknown
+end
+
+-- Short label for the bind chip, e.g. "M1", "Ctrl", "F" or "None".
+local function GetBindName(bind)
+    if not IsBound(bind) then return "None" end
+    return Library.KeyShortNames[bind.Name] or bind.Name
+end
+
+-- While capturing a new bind: convert raw input into a storable bind.
+--   returns a bind            -> set it
+--   returns Enum.KeyCode.Unknown -> clear it (Escape)
+--   returns nil               -> ignore this input
+local function GetBindFromInput(input)
+    local t = input.UserInputType
+    if t == Enum.UserInputType.Keyboard then
+        if input.KeyCode == Enum.KeyCode.Escape then
+            return Enum.KeyCode.Unknown
+        end
+        return input.KeyCode
+    elseif t == Enum.UserInputType.MouseButton1
+        or t == Enum.UserInputType.MouseButton2
+        or t == Enum.UserInputType.MouseButton3 then
+        return t
+    end
+    return nil
+end
+
+-- While in use: does this input fire the bind?
+local function InputMatchesBind(input, bind)
+    if not IsBound(bind) then return false end
+    if bind.EnumType == Enum.KeyCode then
+        return input.UserInputType == Enum.UserInputType.Keyboard and input.KeyCode == bind
+    elseif bind.EnumType == Enum.UserInputType then
+        return input.UserInputType == bind
+    end
+    return false
+end
+
+-- Resolve a saved name (e.g. "MouseButton2", "F") back into a bind for configs.
+local function ResolveBind(name)
+    if type(name) ~= "string" or name == "" or name == "None" or name == "Unknown" then
+        return Enum.KeyCode.Unknown
+    end
+    local okK, k = pcall(function() return Enum.KeyCode[name] end)
+    if okK and k then return k end
+    local okU, u = pcall(function() return Enum.UserInputType[name] end)
+    if okU and u then return u end
+    return Enum.KeyCode.Unknown
+end
+
 local function MakeDraggable(dragHandle, window)
     local dragging, dragInput, dragStart, startPos
 
@@ -229,27 +305,33 @@ ThemeMap = {BackgroundColor3 = "InlineColor"}
                 if not text or text == "" then return end
                 Button.MouseEnter:Connect(function() WindowObj.ShowTooltip(text) end)
                 Button.MouseLeave:Connect(function() WindowObj.HideTooltip() end)
-            end
+            end,
+            HasColorPicker = false
         }
 
-        function ToggleObj:AddKeybind(defaultKey)
+        function ToggleObj:AddKeybind(defaultKey, mode)
             local key = defaultKey or Enum.KeyCode.Unknown
+            mode = mode or "Toggle"      -- "Toggle" or "Hold"
             local binding = false
+            local held = false
+            local justBound = false      -- swallows the click-release that sets M1
+
+            local xOffset = ToggleObj.HasColorPicker and -75 or -50
 
             local ValueLabel = Create("TextLabel", {
                 Parent = ToggleFrame,
                 BackgroundTransparency = 1,
-                Position = UDim2.new(1, -50, 0, 0),
+                Position = UDim2.new(1, xOffset, 0, 0),
                 Size = UDim2.new(0, 50, 1, 0),
                 Font = Library.Theme.Font,
-                Text = "[" .. (key.Name == "Unknown" and "None" or key.Name) .. "]",
+                Text = "[" .. GetBindName(key) .. "]",
                 TextColor3 = Library.Theme.TextMuted,
                 TextSize = 12,
                 TextXAlignment = Enum.TextXAlignment.Right,
                 ZIndex = 5,
 ThemeMap = {TextColor3 = "TextMuted"}
             })
-            
+
             local BindBtn = Create("TextButton", {
                 Parent = ValueLabel,
                 BackgroundTransparency = 1,
@@ -257,35 +339,354 @@ ThemeMap = {TextColor3 = "TextMuted"}
                 Text = "",
                 ZIndex = 6
             })
-            
+
             BindBtn.MouseButton1Click:Connect(function()
+                if justBound then return end
                 binding = true
                 ValueLabel.Text = "[...]"
                 ValueLabel.TextColor3 = Library.Theme.AccentColor
             end)
 
+            -- Right-click the chip to switch between Toggle / Hold.
+            BindBtn.MouseButton2Click:Connect(function()
+                if binding then return end
+                mode = (mode == "Toggle") and "Hold" or "Toggle"
+                WindowObj.ShowTooltip("Keybind mode: " .. mode)
+                task.delay(0.75, WindowObj.HideTooltip)
+            end)
+
             local keyConn = UserInputService.InputBegan:Connect(function(input, processed)
-                if binding and input.UserInputType == Enum.UserInputType.Keyboard then
-                    if input.KeyCode == Enum.KeyCode.Escape then
-                        key = Enum.KeyCode.Unknown
-                    else
-                        key = input.KeyCode
+                if binding then
+                    local newBind = GetBindFromInput(input)
+                    if newBind ~= nil then
+                        key = newBind
+                        binding = false
+                        if newBind == Enum.UserInputType.MouseButton1 then
+                            justBound = true
+                            task.delay(0.15, function() justBound = false end)
+                        end
+                        ValueLabel.Text = "[" .. GetBindName(key) .. "]"
+                        ValueLabel.TextColor3 = Library.Theme.TextMuted
                     end
-                    binding = false
-                    ValueLabel.Text = "[" .. (key.Name == "Unknown" and "None" or key.Name) .. "]"
-                    ValueLabel.TextColor3 = Library.Theme.TextMuted
-                elseif not binding and not processed and input.UserInputType == Enum.UserInputType.Keyboard and input.KeyCode == key and key ~= Enum.KeyCode.Unknown then
-                    SetState(not state)
+                elseif not processed and InputMatchesBind(input, key) then
+                    if mode == "Hold" then
+                        held = true
+                        SetState(true)
+                    else
+                        SetState(not state)
+                    end
                 end
             end)
             table.insert(Library.Connections, keyConn)
-            
+
+            local keyEndConn = UserInputService.InputEnded:Connect(function(input)
+                if mode == "Hold" and held and InputMatchesBind(input, key) then
+                    held = false
+                    SetState(false)
+                end
+            end)
+            table.insert(Library.Connections, keyEndConn)
+
             return {
                 SetKey = function(newKey)
                     key = newKey
-                    ValueLabel.Text = "[" .. (key.Name == "Unknown" and "None" or key.Name) .. "]"
+                    ValueLabel.Text = "[" .. GetBindName(key) .. "]"
+                end,
+                SetMode = function(newMode)
+                    mode = newMode or "Toggle"
                 end
             }
+        end
+
+        function ToggleObj:AddColorPicker(default, callback, cpIdx)
+            cpIdx = cpIdx or (idx .. "Color")
+            default = default or Color3.new(1, 1, 1)
+            callback = callback or function() end
+            ToggleObj.HasColorPicker = true
+            
+            local h, s, v = Color3.toHSV(default)
+            local open = false
+
+            local BoxOutline = Create("Frame", {
+                Parent = ToggleFrame,
+                BackgroundColor3 = Library.Theme.OutlineColor,
+                Position = UDim2.new(1, -20, 0, 2),
+                Size = UDim2.new(0, 20, 0, 10),
+                BorderSizePixel = 0,
+                ThemeMap = {BackgroundColor3 = "OutlineColor"}
+            })
+            local BoxInline = Create("Frame", {
+                Parent = BoxOutline,
+                BackgroundColor3 = Library.Theme.InlineColor,
+                Position = UDim2.new(0, 1, 0, 1),
+                Size = UDim2.new(1, -2, 1, -2),
+                BorderSizePixel = 0,
+                ThemeMap = {BackgroundColor3 = "InlineColor"}
+            })
+            local ColorDisplay = Create("Frame", {
+                Parent = BoxInline,
+                BackgroundColor3 = default,
+                Position = UDim2.new(0, 1, 0, 1),
+                Size = UDim2.new(1, -2, 1, -2),
+                BorderSizePixel = 0
+            })
+
+            local ToggleBtn = Create("TextButton", {
+                Parent = BoxOutline,
+                BackgroundTransparency = 1,
+                Size = UDim2.new(1, 0, 1, 0),
+                Text = "",
+                ZIndex = 5
+            })
+
+            local FlyoutOutline = Create("Frame", {
+                Parent = ScreenGui,
+                BackgroundColor3 = Library.Theme.OutlineColor,
+                Size = UDim2.new(0, 160, 0, 175),
+                Visible = false,
+                ZIndex = 6000,
+                ThemeMap = {BackgroundColor3 = "OutlineColor"}
+            })
+            local FlyoutInline = Create("Frame", {
+                Parent = FlyoutOutline,
+                BackgroundColor3 = Library.Theme.InlineColor,
+                Position = UDim2.new(0, 1, 0, 1),
+                Size = UDim2.new(1, -2, 1, -2),
+                BorderSizePixel = 0,
+                ZIndex = 6000,
+                ThemeMap = {BackgroundColor3 = "InlineColor"}
+            })
+            local FlyoutBg = Create("Frame", {
+                Parent = FlyoutInline,
+                BackgroundColor3 = Library.Theme.GroupBoxColor,
+                Position = UDim2.new(0, 1, 0, 1),
+                Size = UDim2.new(1, -2, 1, -2),
+                BorderSizePixel = 0,
+                ZIndex = 6000,
+                ThemeMap = {BackgroundColor3 = "GroupBoxColor"}
+            })
+
+            -- SV Map
+            local SVOutline = Create("Frame", {
+                Parent = FlyoutBg,
+                BackgroundColor3 = Library.Theme.OutlineColor,
+                Position = UDim2.new(0, 5, 0, 5),
+                Size = UDim2.new(1, -10, 0, 140),
+                BorderSizePixel = 0,
+                ZIndex = 6001,
+                ThemeMap = {BackgroundColor3 = "OutlineColor"}
+            })
+            local SVBg = Create("Frame", {
+                Parent = SVOutline,
+                BackgroundColor3 = Color3.fromHSV(h, 1, 1),
+                Position = UDim2.new(0, 1, 0, 1),
+                Size = UDim2.new(1, -2, 1, -2),
+                BorderSizePixel = 0,
+                ZIndex = 16
+            })
+            local SVWhite = Create("Frame", {
+                Parent = SVBg,
+                BackgroundColor3 = Color3.new(1,1,1),
+                Size = UDim2.new(1, 0, 1, 0),
+                BorderSizePixel = 0,
+                ZIndex = 6002
+            })
+            Create("UIGradient", {
+                Parent = SVWhite,
+                Transparency = NumberSequence.new({
+                    NumberSequenceKeypoint.new(0, 0),
+                    NumberSequenceKeypoint.new(1, 1)
+                })
+            })
+            local SVBlack = Create("Frame", {
+                Parent = SVBg,
+                BackgroundColor3 = Color3.new(0,0,0),
+                Size = UDim2.new(1, 0, 1, 0),
+                BorderSizePixel = 0,
+                ZIndex = 6003
+            })
+            Create("UIGradient", {
+                Parent = SVBlack,
+                Rotation = 90,
+                Transparency = NumberSequence.new({
+                    NumberSequenceKeypoint.new(0, 1),
+                    NumberSequenceKeypoint.new(1, 0)
+                })
+            })
+
+            local SVCursor = Create("Frame", {
+                Parent = SVBg,
+                BackgroundColor3 = Color3.new(1,1,1),
+                Size = UDim2.new(0, 4, 0, 4),
+                Position = UDim2.new(s, -2, 1 - v, -2),
+                BorderSizePixel = 1,
+                BorderColor3 = Color3.new(0,0,0),
+                ZIndex = 6004
+            })
+
+            -- Hue Map
+            local HueOutline = Create("Frame", {
+                Parent = FlyoutBg,
+                BackgroundColor3 = Library.Theme.OutlineColor,
+                Position = UDim2.new(0, 5, 0, 150),
+                Size = UDim2.new(1, -10, 0, 15),
+                BorderSizePixel = 0,
+                ZIndex = 6001,
+                ThemeMap = {BackgroundColor3 = "OutlineColor"}
+            })
+            local HueBg = Create("Frame", {
+                Parent = HueOutline,
+                BackgroundColor3 = Color3.new(1,1,1),
+                Position = UDim2.new(0, 1, 0, 1),
+                Size = UDim2.new(1, -2, 1, -2),
+                BorderSizePixel = 0,
+                ZIndex = 16
+            })
+            Create("UIGradient", {
+                Parent = HueBg,
+                Color = ColorSequence.new({
+                    ColorSequenceKeypoint.new(0, Color3.fromHSV(0, 1, 1)),
+                    ColorSequenceKeypoint.new(0.167, Color3.fromHSV(0.167, 1, 1)),
+                    ColorSequenceKeypoint.new(0.333, Color3.fromHSV(0.333, 1, 1)),
+                    ColorSequenceKeypoint.new(0.5, Color3.fromHSV(0.5, 1, 1)),
+                    ColorSequenceKeypoint.new(0.667, Color3.fromHSV(0.667, 1, 1)),
+                    ColorSequenceKeypoint.new(0.833, Color3.fromHSV(0.833, 1, 1)),
+                    ColorSequenceKeypoint.new(1, Color3.fromHSV(1, 1, 1))
+                })
+            })
+            local HueCursor = Create("Frame", {
+                Parent = HueBg,
+                BackgroundColor3 = Color3.new(1,1,1),
+                Size = UDim2.new(0, 2, 1, 0),
+                Position = UDim2.new(h, -1, 0, 0),
+                BorderSizePixel = 1,
+                BorderColor3 = Color3.new(0,0,0),
+                ZIndex = 6002
+            })
+
+            local function UpdateColor()
+                local c = Color3.fromHSV(h, s, v)
+                ColorDisplay.BackgroundColor3 = c
+                SVBg.BackgroundColor3 = Color3.fromHSV(h, 1, 1)
+                SVCursor.Position = UDim2.new(math.clamp(s, 0, 1), -2, math.clamp(1 - v, 0, 1), -2)
+                HueCursor.Position = UDim2.new(math.clamp(h, 0, 1), -1, 0, 0)
+                if Library.Options[cpIdx] then Library.Options[cpIdx].Value = c end
+                callback(c)
+            end
+
+            local draggingSV = false
+            local draggingHue = false
+
+            local function UpdateSV(input)
+                local pos = input.Position
+                local bounds = SVBg.AbsoluteSize
+                local offset = SVBg.AbsolutePosition
+                s = math.clamp((pos.X - offset.X) / bounds.X, 0, 1)
+                v = 1 - math.clamp((pos.Y - offset.Y) / bounds.Y, 0, 1)
+                UpdateColor()
+            end
+
+            local function UpdateH(input)
+                local pos = input.Position
+                local bounds = HueBg.AbsoluteSize
+                local offset = HueBg.AbsolutePosition
+                h = math.clamp((pos.X - offset.X) / bounds.X, 0, 1)
+                UpdateColor()
+            end
+
+            SVOutline.InputBegan:Connect(function(input)
+                if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+                    draggingSV = true
+                    UpdateSV(input)
+                end
+            end)
+            HueOutline.InputBegan:Connect(function(input)
+                if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+                    draggingHue = true
+                    UpdateH(input)
+                end
+            end)
+            
+            UserInputService.InputEnded:Connect(function(input)
+                if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+                    draggingSV = false
+                    draggingHue = false
+                end
+            end)
+            UserInputService.InputChanged:Connect(function(input)
+                if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+                    if draggingSV then UpdateSV(input) end
+                    if draggingHue then UpdateH(input) end
+                end
+            end)
+
+            ToggleBtn.MouseButton1Click:Connect(function()
+                open = not open
+                FlyoutOutline.Visible = open
+                if open then
+                    FlyoutOutline.Position = UDim2.new(0, BoxOutline.AbsolutePosition.X + 25, 0, BoxOutline.AbsolutePosition.Y)
+                end
+            end)
+            
+            ToggleFrame:GetPropertyChangedSignal("AbsolutePosition"):Connect(function()
+                if open then
+                    FlyoutOutline.Position = UDim2.new(0, BoxOutline.AbsolutePosition.X + 25, 0, BoxOutline.AbsolutePosition.Y)
+                end
+            end)
+            
+            UserInputService.InputBegan:Connect(function(input)
+                if open and (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch) then
+                    local m = input.Position
+                    local fPos, fSize = FlyoutOutline.AbsolutePosition, FlyoutOutline.AbsoluteSize
+                    local bPos, bSize = BoxOutline.AbsolutePosition, BoxOutline.AbsoluteSize
+                    
+                    local inFlyout = m.X >= fPos.X and m.X <= fPos.X + fSize.X and m.Y >= fPos.Y and m.Y <= fPos.Y + fSize.Y
+                    local inBox = m.X >= bPos.X and m.X <= bPos.X + bSize.X and m.Y >= bPos.Y and m.Y <= bPos.Y + bSize.Y
+                    
+                    if not inFlyout and not inBox then
+                        open = false
+                        FlyoutOutline.Visible = false
+                    end
+                end
+            end)
+            
+            UpdateColor()
+            
+            local cpObj = {
+                Type = "ColorPicker",
+                Value = default,
+                UpdateColors = function()
+                end,
+                Save = function(self) return {R = self.Value.R, G = self.Value.G, B = self.Value.B} end,
+                Load = function(self, val)
+                    if type(val) == "table" and val.R then
+                        self:SetValue(Color3.new(val.R, val.G, val.B))
+                    end
+                end,
+                SetValue = function(self, c)
+                    if type(c) == "table" then
+                        local r = c.R or c.r or c[1] or 1
+                        local g = c.G or c.g or c[2] or 1
+                        local b = c.B or c.b or c[3] or 1
+                        if r > 1 or g > 1 or b > 1 then
+                            c = Color3.fromRGB(r, g, b)
+                        else
+                            c = Color3.new(r, g, b)
+                        end
+                    end
+                    h, s, v = Color3.toHSV(c)
+                    UpdateColor()
+                end
+            }
+            Library.Options[cpIdx] = cpObj
+            
+            for _, child in pairs(ToggleFrame:GetChildren()) do
+                if child:IsA("TextLabel") and child.Name ~= "Label" then
+                    child.Position = UDim2.new(1, -75, 0, 0)
+                end
+            end
+            
+            return cpObj
         end
 
         ToggleObj.Type = "Toggle"
@@ -1139,9 +1540,14 @@ ThemeMap = {BackgroundColor3 = "GroupBoxColor"}
         idx = idx or name:gsub(" ", "")
         default = default or Enum.KeyCode.Unknown
         callback = callback or function() end
-        
+
         local key = default
         local binding = false
+        local mode = "Always"          -- "Always" | "Toggle" | "Hold"
+        local Modes = {"Always", "Toggle", "Hold"}
+        local toggled = false
+        local held = false
+        local justBound = false        -- swallows the click-release that sets M1
 
         local KeybindFrame = Create("Frame", {
             Name = name.."_Keybind",
@@ -1153,7 +1559,7 @@ ThemeMap = {BackgroundColor3 = "GroupBoxColor"}
         local Label = Create("TextLabel", {
             Parent = KeybindFrame,
             BackgroundTransparency = 1,
-            Size = UDim2.new(1, -50, 1, 0),
+            Size = UDim2.new(1, -90, 1, 0),
             Font = Library.Theme.Font,
             Text = name,
             TextColor3 = Library.Theme.TextColor,
@@ -1165,15 +1571,24 @@ ThemeMap = {TextColor3 = "TextColor"}
         local ValueLabel = Create("TextLabel", {
             Parent = KeybindFrame,
             BackgroundTransparency = 1,
-            Position = UDim2.new(1, -50, 0, 0),
-            Size = UDim2.new(0, 50, 1, 0),
+            Position = UDim2.new(1, -90, 0, 0),
+            Size = UDim2.new(0, 90, 1, 0),
             Font = Library.Theme.Font,
-            Text = "[" .. (key.Name == "Unknown" and "None" or key.Name) .. "]",
+            Text = "[None]",
             TextColor3 = Library.Theme.TextMuted,
             TextSize = 12,
             TextXAlignment = Enum.TextXAlignment.Right,
 ThemeMap = {TextColor3 = "TextMuted"}
         })
+
+        local function refresh()
+            local t = "[" .. GetBindName(key) .. "]"
+            if IsBound(key) and mode ~= "Always" then
+                t = t .. " " .. mode
+            end
+            ValueLabel.Text = t
+        end
+        refresh()
 
         local Button = Create("TextButton", {
             Parent = KeybindFrame,
@@ -1183,20 +1598,49 @@ ThemeMap = {TextColor3 = "TextMuted"}
         })
 
         Button.MouseButton1Click:Connect(function()
+            if justBound then return end
             binding = true
             ValueLabel.Text = "[...]"
             ValueLabel.TextColor3 = Library.Theme.AccentColor
         end)
 
+        -- Right-click to cycle Always -> Toggle -> Hold.
+        Button.MouseButton2Click:Connect(function()
+            if binding or not IsBound(key) then return end
+            local i = table.find(Modes, mode) or 1
+            mode = Modes[(i % #Modes) + 1]
+            toggled = false
+            refresh()
+        end)
+
         UserInputService.InputBegan:Connect(function(input, processed)
-            if binding and input.UserInputType == Enum.UserInputType.Keyboard then
-                binding = false
-                key = input.KeyCode
-                ValueLabel.Text = "[" .. key.Name .. "]"
-                ValueLabel.TextColor3 = Library.Theme.TextMuted
-                if Library.Options[idx] then Library.Options[idx].Value = key.Name end
+            if binding then
+                local newBind = GetBindFromInput(input)
+                if newBind ~= nil then
+                    binding = false
+                    key = newBind
+                    if newBind == Enum.UserInputType.MouseButton1 then
+                        justBound = true
+                        task.delay(0.15, function() justBound = false end)
+                    end
+                    ValueLabel.TextColor3 = Library.Theme.TextMuted
+                    refresh()
+                    if Library.Options[idx] then Library.Options[idx].Value = key.Name end
+                    callback(key)
+                end
+            elseif not processed and InputMatchesBind(input, key) then
+                if mode == "Toggle" then
+                    toggled = not toggled
+                elseif mode == "Hold" then
+                    held = true
+                end
                 callback(key)
-            elseif not processed and input.KeyCode == key and key ~= Enum.KeyCode.Unknown then
+            end
+        end)
+
+        UserInputService.InputEnded:Connect(function(input)
+            if mode == "Hold" and held and InputMatchesBind(input, key) then
+                held = false
                 callback(key)
             end
         end)
@@ -1206,14 +1650,26 @@ ThemeMap = {TextColor3 = "TextMuted"}
             Value = key.Name,
             Save = function(self) return self.Value end,
             Load = function(self, val)
-                if type(val) == "string" and Enum.KeyCode[val] then
-                    self:SetValue(Enum.KeyCode[val])
+                if type(val) == "string" then
+                    self:SetValue(ResolveBind(val))
                 end
             end,
             SetValue = function(self, k)
-                if Library.Options[idx] then Library.Options[idx].Value = k.Name end
-                key = k
-                ValueLabel.Text = "[" .. (key.Name == "Unknown" and "None" or key.Name) .. "]"
+                key = k or Enum.KeyCode.Unknown
+                if Library.Options[idx] then Library.Options[idx].Value = key.Name end
+                refresh()
+            end,
+            SetMode = function(self, m)
+                mode = m or "Always"
+                toggled = false
+                refresh()
+            end,
+            GetMode = function(self) return mode end,
+            -- For Toggle/Hold binds: current on/off state. (Always = momentary.)
+            GetState = function(self)
+                if mode == "Toggle" then return toggled end
+                if mode == "Hold" then return held end
+                return false
             end
         }
         Library.Options[idx] = obj
