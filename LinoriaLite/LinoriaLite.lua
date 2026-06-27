@@ -48,7 +48,8 @@ function Library:UpdateTheme(themeVar, newColor)
     end
     for _, obj in pairs(Library.Options) do
         if type(obj.UpdateColors) == "function" then
-            obj:UpdateColors()
+            -- pcall so one element's failure can't stop the rest from updating.
+            pcall(function() obj:UpdateColors() end)
         end
     end
 end
@@ -291,8 +292,9 @@ ThemeMap = {BackgroundColor3 = "InlineColor"}
             state = newState
             local targetBg = state and Library.Theme.AccentColor or Library.Theme.GroupBoxColor
             local targetText = state and Library.Theme.TextColor or Library.Theme.TextMuted
-            TweenService:Create(CheckFill, TweenInfo.new(0.15), {BackgroundColor3 = targetBg}):Play()
-            TweenService:Create(Label, TweenInfo.new(0.15), {TextColor3 = targetText}):Play()
+            -- Apply instantly so the accent fill snaps in with no fade lag.
+            CheckFill.BackgroundColor3 = targetBg
+            Label.TextColor3 = targetText
             callback(state)
         end
 
