@@ -25,6 +25,10 @@ function Library:Unload()
     end
 end
 
+-- Rows a dropdown/multi-dropdown shows before its list starts scrolling.
+Library.DropdownMaxItems = 6
+local DROPDOWN_ROW_HEIGHT = 18
+
 Library.Theme = {
     BackgroundColor = Color3.fromRGB(15, 15, 15),
     MainColor = Color3.fromRGB(20, 20, 20),
@@ -70,6 +74,110 @@ end
 
 local function GetTextBounds(text, font, size)
     return TextService:GetTextSize(text, size, font, Vector2.new(9999, 9999))
+end
+
+-- =====================================================================
+-- Scrollbar: Linoria-styled slider for a ScrollingFrame
+-- =====================================================================
+-- Roblox's built-in bar can't be skinned to match the outline/accent look,
+-- so the native one is hidden (ScrollBarThickness = 0) and this draws a
+-- track + draggable accent thumb over the frame instead.
+local SCROLLBAR_WIDTH = 6
+
+local function AttachScrollbar(scrollFrame, parent, zIndex)
+    zIndex = zIndex or (scrollFrame.ZIndex + 10)
+
+    local Track = Create("Frame", {
+        Name = "ScrollTrack",
+        Parent = parent,
+        BackgroundColor3 = Library.Theme.OutlineColor,
+        AnchorPoint = Vector2.new(1, 0),
+        Position = UDim2.new(1, -1, 0, 1),
+        Size = UDim2.new(0, SCROLLBAR_WIDTH, 1, -2),
+        BorderSizePixel = 0,
+        Visible = false,
+        ZIndex = zIndex,
+        ThemeMap = {BackgroundColor3 = "OutlineColor"}
+    })
+    local Thumb = Create("Frame", {
+        Name = "ScrollThumb",
+        Parent = Track,
+        BackgroundColor3 = Library.Theme.AccentColor,
+        Position = UDim2.new(0, 1, 0, 0),
+        Size = UDim2.new(1, -2, 0, 0),
+        BorderSizePixel = 0,
+        ZIndex = zIndex + 1,
+        ThemeMap = {BackgroundColor3 = "AccentColor"}
+    })
+    Create("UIGradient", {
+        Parent = Thumb,
+        Rotation = 90,
+        Color = ColorSequence.new({
+            ColorSequenceKeypoint.new(0, Color3.new(1, 1, 1)),
+            ColorSequenceKeypoint.new(1, Color3.new(0.7, 0.7, 0.7))
+        })
+    })
+
+    local thumbHeight = 0
+
+    local function Refresh()
+        local view = scrollFrame.AbsoluteWindowSize.Y
+        local content = scrollFrame.AbsoluteCanvasSize.Y
+        if view <= 0 or content <= view + 1 then
+            Track.Visible = false
+            return
+        end
+        Track.Visible = true
+
+        local trackH = Track.AbsoluteSize.Y
+        thumbHeight = math.clamp(math.floor(trackH * (view / content)), 12, trackH)
+        local maxScroll = content - view
+        local alpha = maxScroll > 0 and math.clamp(scrollFrame.CanvasPosition.Y / maxScroll, 0, 1) or 0
+
+        Thumb.Size = UDim2.new(1, -2, 0, thumbHeight)
+        Thumb.Position = UDim2.new(0, 1, 0, math.floor((trackH - thumbHeight) * alpha))
+    end
+
+    local dragging = false
+
+    -- Jump/drag: centre the thumb on the cursor and map that back to canvas Y.
+    local function ScrollTo(input)
+        local trackH = Track.AbsoluteSize.Y
+        local span = trackH - thumbHeight
+        if span <= 0 then return end
+        local offset = input.Position.Y - Track.AbsolutePosition.Y - (thumbHeight / 2)
+        local alpha = math.clamp(offset / span, 0, 1)
+        local maxScroll = math.max(scrollFrame.AbsoluteCanvasSize.Y - scrollFrame.AbsoluteWindowSize.Y, 0)
+        scrollFrame.CanvasPosition = Vector2.new(0, maxScroll * alpha)
+    end
+
+    Track.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            ScrollTo(input)
+        end
+    end)
+
+    local endConn = UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = false
+        end
+    end)
+    table.insert(Library.Connections, endConn)
+
+    local moveConn = UserInputService.InputChanged:Connect(function(input)
+        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+            ScrollTo(input)
+        end
+    end)
+    table.insert(Library.Connections, moveConn)
+
+    scrollFrame:GetPropertyChangedSignal("CanvasPosition"):Connect(Refresh)
+    scrollFrame:GetPropertyChangedSignal("AbsoluteCanvasSize"):Connect(Refresh)
+    scrollFrame:GetPropertyChangedSignal("AbsoluteWindowSize"):Connect(Refresh)
+    Track:GetPropertyChangedSignal("AbsoluteSize"):Connect(Refresh)
+
+    return { Refresh = Refresh, Track = Track, Thumb = Thumb }
 end
 
 -- =====================================================================
@@ -1132,23 +1240,44 @@ ThemeMap = {BackgroundColor3 = "OutlineColor"}
             ZIndex = 5000,
 ThemeMap = {BackgroundColor3 = "InlineColor"}
         })
-        local OptsBg = Create("Frame", {
+        local OptsBg = Create("ScrollingFrame", {
             Parent = OptsInline,
             BackgroundColor3 = Library.Theme.GroupBoxColor,
             Position = UDim2.new(0, 1, 0, 1),
             Size = UDim2.new(1, -2, 1, -2),
             BorderSizePixel = 0,
             ZIndex = 5000,
+            ClipsDescendants = true,
+            CanvasSize = UDim2.new(0, 0, 0, 0),
+            ScrollingDirection = Enum.ScrollingDirection.Y,
+            -- Native bar is hidden; AttachScrollbar draws the themed one.
+            ScrollBarThickness = 0,
+            ElasticBehavior = Enum.ElasticBehavior.Never,
 ThemeMap = {BackgroundColor3 = "GroupBoxColor"}
         })
-        
+
         local OptionsLayout = Create("UIListLayout", {
             Parent = OptsBg,
             SortOrder = Enum.SortOrder.LayoutOrder
         })
-        
+
+        local Scrollbar = AttachScrollbar(OptsBg, OptsInline, 5010)
+
         local function UpdateOptions()
-            local targetSize = UDim2.new(0, BoxOutline.AbsoluteSize.X, 0, open and (OptionsLayout.AbsoluteContentSize.Y + 4) or 0)
+            -- Full list height, and the capped height actually shown on screen.
+            local contentY = OptionsLayout.AbsoluteContentSize.Y
+            local maxY = math.max(Library.DropdownMaxItems or 6, 1) * DROPDOWN_ROW_HEIGHT
+            local visibleY = math.min(contentY, maxY)
+
+            -- Canvas is always the full list so the overflow scrolls.
+            OptsBg.CanvasSize = UDim2.new(0, 0, 0, contentY)
+
+            -- Narrow the rows when the slider shows so nothing hides under it.
+            local needsBar = contentY > visibleY + 1
+            OptsBg.Size = UDim2.new(1, -2 - (needsBar and SCROLLBAR_WIDTH or 0), 1, -2)
+            Scrollbar.Refresh()
+
+            local targetSize = UDim2.new(0, BoxOutline.AbsoluteSize.X, 0, open and (visibleY + 4) or 0)
             if open then OptsOutline.Visible = true end
             
             local tween = TweenService:Create(OptsOutline, TweenInfo.new(0.15, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {Size = targetSize})
@@ -1168,6 +1297,11 @@ ThemeMap = {BackgroundColor3 = "GroupBoxColor"}
         end)
         BoxOutline:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
             if open then UpdateOptions() end
+        end)
+        -- Layout size settles a frame after options are built, so keep the canvas in sync.
+        OptionsLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+            OptsBg.CanvasSize = UDim2.new(0, 0, 0, OptionsLayout.AbsoluteContentSize.Y)
+            Scrollbar.Refresh()
         end)
         
         local optionButtons = {}
@@ -1392,23 +1526,44 @@ ThemeMap = {BackgroundColor3 = "OutlineColor"}
             ZIndex = 5000,
 ThemeMap = {BackgroundColor3 = "InlineColor"}
         })
-        local OptsBg = Create("Frame", {
+        local OptsBg = Create("ScrollingFrame", {
             Parent = OptsInline,
             BackgroundColor3 = Library.Theme.GroupBoxColor,
             Position = UDim2.new(0, 1, 0, 1),
             Size = UDim2.new(1, -2, 1, -2),
             BorderSizePixel = 0,
             ZIndex = 5000,
+            ClipsDescendants = true,
+            CanvasSize = UDim2.new(0, 0, 0, 0),
+            ScrollingDirection = Enum.ScrollingDirection.Y,
+            -- Native bar is hidden; AttachScrollbar draws the themed one.
+            ScrollBarThickness = 0,
+            ElasticBehavior = Enum.ElasticBehavior.Never,
 ThemeMap = {BackgroundColor3 = "GroupBoxColor"}
         })
-        
+
         local OptionsLayout = Create("UIListLayout", {
             Parent = OptsBg,
             SortOrder = Enum.SortOrder.LayoutOrder
         })
-        
+
+        local Scrollbar = AttachScrollbar(OptsBg, OptsInline, 5010)
+
         local function UpdateOptions()
-            local targetSize = UDim2.new(0, BoxOutline.AbsoluteSize.X, 0, open and (OptionsLayout.AbsoluteContentSize.Y + 4) or 0)
+            -- Full list height, and the capped height actually shown on screen.
+            local contentY = OptionsLayout.AbsoluteContentSize.Y
+            local maxY = math.max(Library.DropdownMaxItems or 6, 1) * DROPDOWN_ROW_HEIGHT
+            local visibleY = math.min(contentY, maxY)
+
+            -- Canvas is always the full list so the overflow scrolls.
+            OptsBg.CanvasSize = UDim2.new(0, 0, 0, contentY)
+
+            -- Narrow the rows when the slider shows so nothing hides under it.
+            local needsBar = contentY > visibleY + 1
+            OptsBg.Size = UDim2.new(1, -2 - (needsBar and SCROLLBAR_WIDTH or 0), 1, -2)
+            Scrollbar.Refresh()
+
+            local targetSize = UDim2.new(0, BoxOutline.AbsoluteSize.X, 0, open and (visibleY + 4) or 0)
             if open then OptsOutline.Visible = true end
             
             local tween = TweenService:Create(OptsOutline, TweenInfo.new(0.15, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {Size = targetSize})
@@ -1428,6 +1583,11 @@ ThemeMap = {BackgroundColor3 = "GroupBoxColor"}
         end)
         BoxOutline:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
             if open then UpdateOptions() end
+        end)
+        -- Layout size settles a frame after options are built, so keep the canvas in sync.
+        OptionsLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+            OptsBg.CanvasSize = UDim2.new(0, 0, 0, OptionsLayout.AbsoluteContentSize.Y)
+            Scrollbar.Refresh()
         end)
         
         local optionButtons = {}
