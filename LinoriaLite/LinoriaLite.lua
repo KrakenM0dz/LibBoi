@@ -3,6 +3,7 @@ local TweenService = game:GetService("TweenService")
 local Players = game:GetService("Players")
 local CoreGui = game:GetService("CoreGui")
 local TextService = game:GetService("TextService")
+local RunService = game:GetService("RunService")
 
 local LocalPlayer = Players.LocalPlayer
 
@@ -22,6 +23,25 @@ function Library:Unload()
     table.clear(Library.Options)
     if Library.ScreenGui then
         Library.ScreenGui:Destroy()
+        Library.ScreenGui = nil
+    end
+end
+
+-- Every global input hook goes through here so Unload() can drop all of them.
+-- Hooks left connected keep firing against destroyed instances and stack up
+-- again each time the script is re-run.
+local function TrackInput(event, fn)
+    local conn = event:Connect(fn)
+    table.insert(Library.Connections, conn)
+    return conn
+end
+
+-- Drop an instance (and its descendants) from the theme map before destroying
+-- it, otherwise the map keeps them alive for the lifetime of the session.
+local function Untrack(instance)
+    Library.ThemeObjects[instance] = nil
+    for _, child in ipairs(instance:GetDescendants()) do
+        Library.ThemeObjects[child] = nil
     end
 end
 
@@ -73,7 +93,7 @@ local function Create(className, properties)
 end
 
 local function GetTextBounds(text, font, size)
-    return TextService:GetTextSize(text, size, font, Vector2.new(9999, 9999))
+    return TextService:GetTextSize(tostring(text or ""), size, font, Vector2.new(9999, 9999))
 end
 
 -- =====================================================================
@@ -287,11 +307,569 @@ local function MakeDraggable(dragHandle, window)
         end
     end)
 
-    UserInputService.InputChanged:Connect(function(input)
+    TrackInput(UserInputService.InputChanged, function(input)
         if input == dragInput and dragging then
             update(input)
         end
     end)
+end
+
+-- =====================================================================
+-- Colour picker
+-- =====================================================================
+-- One implementation, shared by the standalone element and the one that rides
+-- on a toggle, so the two can no longer drift apart. Beyond the SV/hue square
+-- it carries an alpha bar, a hex field, preset swatches and a rainbow mode.
+
+-- A single heartbeat drives every rainbow-enabled picker, rather than one
+-- connection per picker sitting idle in the frame loop.
+local RainbowTargets = {}
+local RainbowConn = nil
+local function SetRainbowDriver(fn, on)
+    if on then
+        RainbowTargets[fn] = true
+        if not RainbowConn then
+            RainbowConn = RunService.Heartbeat:Connect(function(dt)
+                for f in pairs(RainbowTargets) do f(dt) end
+            end)
+            table.insert(Library.Connections, RainbowConn)
+        end
+    else
+        RainbowTargets[fn] = nil
+    end
+end
+
+Library.RainbowSpeed = 0.35   -- hue revolutions per second
+
+local PRESET_COLORS = {
+    Color3.fromRGB(255, 255, 255), Color3.fromRGB(0, 0, 0),
+    Color3.fromRGB(255, 60, 60),   Color3.fromRGB(255, 150, 40),
+    Color3.fromRGB(255, 240, 60),  Color3.fromRGB(70, 230, 110),
+    Color3.fromRGB(0, 220, 255),   Color3.fromRGB(120, 110, 255),
+}
+
+local function ColorToHex(c)
+    return string.format("#%02X%02X%02X",
+        math.floor(c.R * 255 + 0.5), math.floor(c.G * 255 + 0.5), math.floor(c.B * 255 + 0.5))
+end
+
+-- Accepts "#RRGGBB", "RRGGBB" and the "#RGB" shorthand; nil when unparseable.
+local function HexToColor(text)
+    local hex = tostring(text or ""):gsub("#", ""):gsub("%s", "")
+    if #hex == 3 then
+        hex = hex:sub(1, 1):rep(2) .. hex:sub(2, 2):rep(2) .. hex:sub(3, 3):rep(2)
+    end
+    if #hex ~= 6 or hex:match("%X") then return nil end
+    return Color3.fromRGB(tonumber(hex:sub(1, 2), 16), tonumber(hex:sub(3, 4), 16), tonumber(hex:sub(5, 6), 16))
+end
+
+-- Coerce whatever a config/hub hands us into a Color3.
+local function CoerceColor(c)
+    if typeof(c) == "Color3" then return c end
+    if type(c) == "string" then return HexToColor(c) end
+    if type(c) == "table" then
+        local r = c.R or c.r or c[1] or 1
+        local g = c.G or c.g or c[2] or 1
+        local b = c.B or c.b or c[3] or 1
+        if r > 1 or g > 1 or b > 1 then return Color3.fromRGB(r, g, b) end
+        return Color3.new(r, g, b)
+    end
+    return nil
+end
+
+local FLYOUT_W = 180
+
+-- cfg: ScreenGui, WindowObj, SwatchParent, ClickParent, AnchorFrame,
+--      Default, DefaultTransparency, Callback, Idx
+local function BuildColorPicker(cfg)
+    local ScreenGui = cfg.ScreenGui
+    local WindowObj = cfg.WindowObj
+    local callback  = cfg.Callback or function() end
+    local idx       = cfg.Idx
+    local default   = CoerceColor(cfg.Default) or Color3.new(1, 1, 1)
+
+    local obj
+    local h, s, v = Color3.toHSV(default)
+    local alpha = math.clamp(tonumber(cfg.DefaultTransparency) or 0, 0, 1)  -- 0 = opaque
+    local rainbow = false
+    local open = false
+
+    ------------------------------------------------------------------ swatch
+    local BoxOutline = Create("Frame", {
+        Parent = cfg.SwatchParent,
+        BackgroundColor3 = Library.Theme.OutlineColor,
+        Position = UDim2.new(1, -20, 0, 2),
+        Size = UDim2.new(0, 20, 0, 10),
+        BorderSizePixel = 0,
+        ThemeMap = {BackgroundColor3 = "OutlineColor"}
+    })
+    local BoxInline = Create("Frame", {
+        Parent = BoxOutline,
+        BackgroundColor3 = Library.Theme.InlineColor,
+        Position = UDim2.new(0, 1, 0, 1),
+        Size = UDim2.new(1, -2, 1, -2),
+        BorderSizePixel = 0,
+        ThemeMap = {BackgroundColor3 = "InlineColor"}
+    })
+    local ColorDisplay = Create("Frame", {
+        Parent = BoxInline,
+        BackgroundColor3 = default,
+        Position = UDim2.new(0, 1, 0, 1),
+        Size = UDim2.new(1, -2, 1, -2),
+        BorderSizePixel = 0
+    })
+
+    -- No ClickParent means only the swatch opens the flyout (the toggle row
+    -- itself belongs to the toggle).
+    local ToggleBtn = Create("TextButton", {
+        Parent = cfg.ClickParent or BoxOutline,
+        BackgroundTransparency = 1,
+        Size = UDim2.new(1, 0, 1, 0),
+        Text = "",
+        ZIndex = 5
+    })
+
+    ------------------------------------------------------------------ flyout
+    local FlyoutOutline = Create("Frame", {
+        Parent = ScreenGui,
+        BackgroundColor3 = Library.Theme.OutlineColor,
+        Size = UDim2.new(0, FLYOUT_W, 0, 218),
+        Visible = false,
+        ZIndex = 6000,
+        ThemeMap = {BackgroundColor3 = "OutlineColor"}
+    })
+    local FlyoutInline = Create("Frame", {
+        Parent = FlyoutOutline,
+        BackgroundColor3 = Library.Theme.InlineColor,
+        Position = UDim2.new(0, 1, 0, 1),
+        Size = UDim2.new(1, -2, 1, -2),
+        BorderSizePixel = 0,
+        ZIndex = 6000,
+        ThemeMap = {BackgroundColor3 = "InlineColor"}
+    })
+    local FlyoutBg = Create("Frame", {
+        Parent = FlyoutInline,
+        BackgroundColor3 = Library.Theme.GroupBoxColor,
+        Position = UDim2.new(0, 1, 0, 1),
+        Size = UDim2.new(1, -2, 1, -2),
+        BorderSizePixel = 0,
+        ZIndex = 6000,
+        ThemeMap = {BackgroundColor3 = "GroupBoxColor"}
+    })
+
+    -- helper for the outlined sub-panels inside the flyout
+    local function Panel(y, height)
+        local outline = Create("Frame", {
+            Parent = FlyoutBg,
+            BackgroundColor3 = Library.Theme.OutlineColor,
+            Position = UDim2.new(0, 5, 0, y),
+            Size = UDim2.new(1, -10, 0, height),
+            BorderSizePixel = 0,
+            ZIndex = 6001,
+            ThemeMap = {BackgroundColor3 = "OutlineColor"}
+        })
+        local inner = Create("Frame", {
+            Parent = outline,
+            BackgroundColor3 = Color3.new(1, 1, 1),
+            Position = UDim2.new(0, 1, 0, 1),
+            Size = UDim2.new(1, -2, 1, -2),
+            BorderSizePixel = 0,
+            ZIndex = 6002
+        })
+        return outline, inner
+    end
+
+    -- SV square ------------------------------------------------------
+    local SVOutline, SVBg = Panel(5, 118)
+    SVBg.BackgroundColor3 = Color3.fromHSV(h, 1, 1)
+    local SVWhite = Create("Frame", {
+        Parent = SVBg,
+        BackgroundColor3 = Color3.new(1, 1, 1),
+        Size = UDim2.new(1, 0, 1, 0),
+        BorderSizePixel = 0,
+        ZIndex = 6003
+    })
+    Create("UIGradient", {
+        Parent = SVWhite,
+        Transparency = NumberSequence.new({
+            NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(1, 1)
+        })
+    })
+    local SVBlack = Create("Frame", {
+        Parent = SVBg,
+        BackgroundColor3 = Color3.new(0, 0, 0),
+        Size = UDim2.new(1, 0, 1, 0),
+        BorderSizePixel = 0,
+        ZIndex = 6004
+    })
+    Create("UIGradient", {
+        Parent = SVBlack,
+        Rotation = 90,
+        Transparency = NumberSequence.new({
+            NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(1, 0)
+        })
+    })
+    local SVCursor = Create("Frame", {
+        Parent = SVBg,
+        BackgroundColor3 = Color3.new(1, 1, 1),
+        Size = UDim2.new(0, 4, 0, 4),
+        Position = UDim2.new(s, -2, 1 - v, -2),
+        BorderSizePixel = 1,
+        BorderColor3 = Color3.new(0, 0, 0),
+        ZIndex = 6005
+    })
+
+    -- hue bar --------------------------------------------------------
+    local HueOutline, HueBg = Panel(127, 13)
+    Create("UIGradient", {
+        Parent = HueBg,
+        Color = ColorSequence.new({
+            ColorSequenceKeypoint.new(0, Color3.fromHSV(0, 1, 1)),
+            ColorSequenceKeypoint.new(0.167, Color3.fromHSV(0.167, 1, 1)),
+            ColorSequenceKeypoint.new(0.333, Color3.fromHSV(0.333, 1, 1)),
+            ColorSequenceKeypoint.new(0.5, Color3.fromHSV(0.5, 1, 1)),
+            ColorSequenceKeypoint.new(0.667, Color3.fromHSV(0.667, 1, 1)),
+            ColorSequenceKeypoint.new(0.833, Color3.fromHSV(0.833, 1, 1)),
+            ColorSequenceKeypoint.new(1, Color3.fromHSV(1, 1, 1))
+        })
+    })
+    local HueCursor = Create("Frame", {
+        Parent = HueBg,
+        BackgroundColor3 = Color3.new(1, 1, 1),
+        Size = UDim2.new(0, 2, 1, 0),
+        Position = UDim2.new(h, -1, 0, 0),
+        BorderSizePixel = 1,
+        BorderColor3 = Color3.new(0, 0, 0),
+        ZIndex = 6003
+    })
+
+    -- alpha bar: dark base, colour fading in left (clear) to right (solid)
+    local AlphaOutline, AlphaBase = Panel(144, 13)
+    AlphaBase.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+    local AlphaFill = Create("Frame", {
+        Parent = AlphaBase,
+        BackgroundColor3 = default,
+        Size = UDim2.new(1, 0, 1, 0),
+        BorderSizePixel = 0,
+        ZIndex = 6003
+    })
+    Create("UIGradient", {
+        Parent = AlphaFill,
+        Transparency = NumberSequence.new({
+            NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(1, 0)
+        })
+    })
+    local AlphaCursor = Create("Frame", {
+        Parent = AlphaBase,
+        BackgroundColor3 = Color3.new(1, 1, 1),
+        Size = UDim2.new(0, 2, 1, 0),
+        Position = UDim2.new(1 - alpha, -1, 0, 0),
+        BorderSizePixel = 1,
+        BorderColor3 = Color3.new(0, 0, 0),
+        ZIndex = 6004
+    })
+
+    -- hex field ------------------------------------------------------
+    local HexOutline, HexBg = Panel(161, 18)
+    HexBg.BackgroundColor3 = Library.Theme.GroupBoxColor
+    Library.ThemeObjects[HexBg] = {BackgroundColor3 = "GroupBoxColor"}
+    local HexBox = Create("TextBox", {
+        Parent = HexBg,
+        BackgroundTransparency = 1,
+        Position = UDim2.new(0, 5, 0, 0),
+        Size = UDim2.new(1, -10, 1, 0),
+        Font = Library.Theme.Font,
+        Text = ColorToHex(default),
+        TextColor3 = Library.Theme.TextColor,
+        PlaceholderText = "#RRGGBB",
+        PlaceholderColor3 = Library.Theme.TextMuted,
+        TextSize = 12,
+        ClearTextOnFocus = false,
+        ZIndex = 6003,
+        ThemeMap = {TextColor3 = "TextColor", PlaceholderColor3 = "TextMuted"}
+    })
+
+    -- preset swatches ------------------------------------------------
+    local PresetRow = Create("Frame", {
+        Parent = FlyoutBg,
+        BackgroundTransparency = 1,
+        Position = UDim2.new(0, 5, 0, 183),
+        Size = UDim2.new(1, -10, 0, 13),
+        ZIndex = 6001
+    })
+    local presetButtons = {}
+
+    -- rainbow toggle -------------------------------------------------
+    local RainbowRow = Create("Frame", {
+        Parent = FlyoutBg,
+        BackgroundTransparency = 1,
+        Position = UDim2.new(0, 5, 0, 200),
+        Size = UDim2.new(1, -10, 0, 13),
+        ZIndex = 6001
+    })
+    local RbOutline = Create("Frame", {
+        Parent = RainbowRow,
+        BackgroundColor3 = Library.Theme.OutlineColor,
+        Size = UDim2.new(0, 10, 0, 10),
+        Position = UDim2.new(0, 0, 0.5, -5),
+        BorderSizePixel = 0,
+        ZIndex = 6002,
+        ThemeMap = {BackgroundColor3 = "OutlineColor"}
+    })
+    local RbInline = Create("Frame", {
+        Parent = RbOutline,
+        BackgroundColor3 = Library.Theme.InlineColor,
+        Position = UDim2.new(0, 1, 0, 1),
+        Size = UDim2.new(1, -2, 1, -2),
+        BorderSizePixel = 0,
+        ZIndex = 6003,
+        ThemeMap = {BackgroundColor3 = "InlineColor"}
+    })
+    local RbFill = Create("Frame", {
+        Parent = RbInline,
+        BackgroundColor3 = Library.Theme.GroupBoxColor,
+        Position = UDim2.new(0, 1, 0, 1),
+        Size = UDim2.new(1, -2, 1, -2),
+        BorderSizePixel = 0,
+        ZIndex = 6004
+    })
+    local RbLabel = Create("TextLabel", {
+        Parent = RainbowRow,
+        BackgroundTransparency = 1,
+        Position = UDim2.new(0, 16, 0, 0),
+        Size = UDim2.new(1, -16, 1, 0),
+        Font = Library.Theme.Font,
+        Text = "Rainbow",
+        TextColor3 = Library.Theme.TextMuted,
+        TextSize = 12,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        ZIndex = 6002
+    })
+    local RbButton = Create("TextButton", {
+        Parent = RainbowRow,
+        BackgroundTransparency = 1,
+        Size = UDim2.new(1, 0, 1, 0),
+        Text = "",
+        ZIndex = 6005
+    })
+
+    ------------------------------------------------------------------ state
+    local function UpdateColor()
+        local c = Color3.fromHSV(h, s, v)
+        ColorDisplay.BackgroundColor3 = c
+        ColorDisplay.BackgroundTransparency = alpha
+        SVBg.BackgroundColor3 = Color3.fromHSV(h, 1, 1)
+        SVCursor.Position = UDim2.new(math.clamp(s, 0, 1), -2, math.clamp(1 - v, 0, 1), -2)
+        HueCursor.Position = UDim2.new(math.clamp(h, 0, 1), -1, 0, 0)
+        AlphaFill.BackgroundColor3 = c
+        AlphaCursor.Position = UDim2.new(math.clamp(1 - alpha, 0, 1), -1, 0, 0)
+        if not (HexBox.IsFocused and HexBox:IsFocused()) then HexBox.Text = ColorToHex(c) end
+        if obj then
+            obj.Value = c
+            obj.Transparency = alpha
+            obj.Rainbow = rainbow
+        end
+        if Library.Options[idx] then
+            Library.Options[idx].Value = c
+            Library.Options[idx].Transparency = alpha
+        end
+        callback(c, alpha)
+    end
+
+    local function RainbowStep(dt)
+        h = (h + dt * (Library.RainbowSpeed or 0.35)) % 1
+        UpdateColor()
+    end
+
+    local function SetRainbow(on)
+        rainbow = on and true or false
+        RbFill.BackgroundColor3 = rainbow and Library.Theme.AccentColor or Library.Theme.GroupBoxColor
+        RbLabel.TextColor3 = rainbow and Library.Theme.TextColor or Library.Theme.TextMuted
+        SetRainbowDriver(RainbowStep, rainbow)
+        if obj then obj.Rainbow = rainbow end
+    end
+
+    RbButton.MouseButton1Click:Connect(function() SetRainbow(not rainbow) end)
+
+    -- preset swatches need UpdateColor, so they are wired after it exists
+    for i, c in ipairs(PRESET_COLORS) do
+        local swatchOutline = Create("Frame", {
+            Parent = PresetRow,
+            BackgroundColor3 = Library.Theme.OutlineColor,
+            Position = UDim2.new((i - 1) / #PRESET_COLORS, 0, 0, 0),
+            Size = UDim2.new(1 / #PRESET_COLORS, -2, 1, 0),
+            BorderSizePixel = 0,
+            ZIndex = 6002,
+            ThemeMap = {BackgroundColor3 = "OutlineColor"}
+        })
+        local swatch = Create("Frame", {
+            Parent = swatchOutline,
+            BackgroundColor3 = c,
+            Position = UDim2.new(0, 1, 0, 1),
+            Size = UDim2.new(1, -2, 1, -2),
+            BorderSizePixel = 0,
+            ZIndex = 6003
+        })
+        local btn = Create("TextButton", {
+            Parent = swatchOutline,
+            BackgroundTransparency = 1,
+            Size = UDim2.new(1, 0, 1, 0),
+            Text = "",
+            ZIndex = 6004
+        })
+        btn.MouseButton1Click:Connect(function()
+            SetRainbow(false)
+            h, s, v = Color3.toHSV(c)
+            UpdateColor()
+        end)
+        table.insert(presetButtons, swatch)
+    end
+
+    HexBox.FocusLost:Connect(function()
+        local c = HexToColor(HexBox.Text)
+        if c then
+            SetRainbow(false)
+            h, s, v = Color3.toHSV(c)
+        end
+        UpdateColor()   -- also restores the text when the input was rejected
+    end)
+
+    ------------------------------------------------------------------ dragging
+    local draggingSV, draggingHue, draggingAlpha = false, false, false
+
+    local function UpdateSV(input)
+        local bounds, offset = SVBg.AbsoluteSize, SVBg.AbsolutePosition
+        if bounds.X <= 0 or bounds.Y <= 0 then return end
+        s = math.clamp((input.Position.X - offset.X) / bounds.X, 0, 1)
+        v = 1 - math.clamp((input.Position.Y - offset.Y) / bounds.Y, 0, 1)
+        UpdateColor()
+    end
+    local function UpdateH(input)
+        local bounds, offset = HueBg.AbsoluteSize, HueBg.AbsolutePosition
+        if bounds.X <= 0 then return end
+        h = math.clamp((input.Position.X - offset.X) / bounds.X, 0, 1)
+        UpdateColor()
+    end
+    local function UpdateA(input)
+        local bounds, offset = AlphaBase.AbsoluteSize, AlphaBase.AbsolutePosition
+        if bounds.X <= 0 then return end
+        alpha = 1 - math.clamp((input.Position.X - offset.X) / bounds.X, 0, 1)
+        UpdateColor()
+    end
+
+    local function beginDrag(frame, setFlag)
+        frame.InputBegan:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+                setFlag(input)
+            end
+        end)
+    end
+    beginDrag(SVOutline, function(input) draggingSV = true; SetRainbow(false); UpdateSV(input) end)
+    beginDrag(HueOutline, function(input) draggingHue = true; SetRainbow(false); UpdateH(input) end)
+    beginDrag(AlphaOutline, function(input) draggingAlpha = true; UpdateA(input) end)
+
+    TrackInput(UserInputService.InputEnded, function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            draggingSV, draggingHue, draggingAlpha = false, false, false
+        end
+    end)
+    TrackInput(UserInputService.InputChanged, function(input)
+        if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+            if draggingSV then UpdateSV(input) end
+            if draggingHue then UpdateH(input) end
+            if draggingAlpha then UpdateA(input) end
+        end
+    end)
+
+    ------------------------------------------------------------------ open/close
+    local function Reposition()
+        FlyoutOutline.Position = UDim2.new(0, BoxOutline.AbsolutePosition.X + 25, 0, BoxOutline.AbsolutePosition.Y)
+    end
+    local function CloseFlyout()
+        if not open then return end
+        open = false
+        FlyoutOutline.Visible = false
+    end
+    if WindowObj.RegisterPopup then WindowObj.RegisterPopup(CloseFlyout) end
+
+    ToggleBtn.MouseButton1Click:Connect(function()
+        if open then
+            CloseFlyout()
+            return
+        end
+        if WindowObj.ClosePopups then WindowObj.ClosePopups(CloseFlyout) end
+        open = true
+        FlyoutOutline.Visible = true
+        Reposition()
+    end)
+
+    cfg.AnchorFrame:GetPropertyChangedSignal("AbsolutePosition"):Connect(function()
+        if open then Reposition() end
+    end)
+
+    TrackInput(UserInputService.InputBegan, function(input)
+        if open and (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch) then
+            local m = input.Position
+            local fPos, fSize = FlyoutOutline.AbsolutePosition, FlyoutOutline.AbsoluteSize
+            local bPos, bSize = BoxOutline.AbsolutePosition, BoxOutline.AbsoluteSize
+            local inFlyout = m.X >= fPos.X and m.X <= fPos.X + fSize.X and m.Y >= fPos.Y and m.Y <= fPos.Y + fSize.Y
+            local inBox = m.X >= bPos.X and m.X <= bPos.X + bSize.X and m.Y >= bPos.Y and m.Y <= bPos.Y + bSize.Y
+            if not inFlyout and not inBox then CloseFlyout() end
+        end
+    end)
+
+    UpdateColor()
+
+    ------------------------------------------------------------------ api
+    obj = {
+        Type = "ColorPicker",
+        Value = Color3.fromHSV(h, s, v),
+        Transparency = alpha,
+        Rainbow = false,
+        UpdateColors = function()
+            RbFill.BackgroundColor3 = rainbow and Library.Theme.AccentColor or Library.Theme.GroupBoxColor
+            RbLabel.TextColor3 = rainbow and Library.Theme.TextColor or Library.Theme.TextMuted
+        end,
+        Save = function(self)
+            return {
+                R = self.Value.R, G = self.Value.G, B = self.Value.B,
+                A = self.Transparency, Rainbow = self.Rainbow,
+            }
+        end,
+        Load = function(self, val)
+            if type(val) ~= "table" then return end
+            local c = CoerceColor(val)
+            if c then self:SetValue(c) end
+            if val.A ~= nil then self:SetTransparency(val.A) end
+            self:SetRainbow(val.Rainbow == true)
+        end,
+        SetValue = function(self, c)
+            c = CoerceColor(c)
+            if not c then return end
+            h, s, v = Color3.toHSV(c)
+            UpdateColor()
+        end,
+        SetTransparency = function(self, a)
+            alpha = math.clamp(tonumber(a) or 0, 0, 1)
+            UpdateColor()
+        end,
+        SetRainbow = function(self, on)
+            SetRainbow(on)
+            UpdateColor()
+        end,
+        GetHex = function(self) return ColorToHex(self.Value) end,
+        SetHex = function(self, hex)
+            local c = HexToColor(hex)
+            if c then self:SetValue(c) end
+        end,
+        Close = function() CloseFlyout() end,
+        AddTooltip = function(self, text)
+            if not text or text == "" then return end
+            BoxOutline.MouseEnter:Connect(function() WindowObj.ShowTooltip(text) end)
+            BoxOutline.MouseLeave:Connect(function() WindowObj.HideTooltip() end)
+        end,
+    }
+    return obj
 end
 
 local function BindElementMethods(Obj, ElementContainer, WindowObj)
@@ -313,7 +891,15 @@ local function BindElementMethods(Obj, ElementContainer, WindowObj)
             TextXAlignment = Enum.TextXAlignment.Left,
 ThemeMap = {TextColor3 = "TextColor"}
         })
-        return { SetText = function(newText) Label.Text = newText end }
+        -- Accepts both `label:SetText(s)` and `label.SetText(s)`; hub scripts use both.
+        local LabelObj
+        LabelObj = {
+            SetText = function(a, b)
+                local newText = (a == LabelObj) and b or a
+                Label.Text = tostring(newText == nil and "" or newText)
+            end
+        }
+        return LabelObj
     end
 
     function Obj:AddDivider()
@@ -396,20 +982,25 @@ ThemeMap = {BackgroundColor3 = "InlineColor"}
             Text = ""
         })
 
+        -- Declared before SetState so every state change writes through to
+        -- ToggleObj.Value -- that field is what configs and hub scripts read.
+        local ToggleObj
+
         local function SetState(newState)
-            state = newState
+            state = newState and true or false
             local targetBg = state and Library.Theme.AccentColor or Library.Theme.GroupBoxColor
             local targetText = state and Library.Theme.TextColor or Library.Theme.TextMuted
             -- Apply instantly so the accent fill snaps in with no fade lag.
             CheckFill.BackgroundColor3 = targetBg
             Label.TextColor3 = targetText
+            if ToggleObj then ToggleObj.Value = state end
             callback(state)
         end
 
         Button.MouseButton1Click:Connect(function() SetState(not state) end)
         SetState(state)
         
-        local ToggleObj = { 
+        ToggleObj = { 
             SetValue = function(self, newState) SetState(newState) end,
             AddTooltip = function(self, text)
                 if not text or text == "" then return end
@@ -497,305 +1088,48 @@ ThemeMap = {TextColor3 = "TextMuted"}
             end)
             table.insert(Library.Connections, keyEndConn)
 
-            return {
-                SetKey = function(newKey)
-                    key = newKey
+            local BindObj
+            BindObj = {
+                -- Accepts colon or dot calls, and an EnumItem or a saved name
+                -- like "MouseButton2" / "F".
+                SetKey = function(a, b)
+                    local newKey = (a == BindObj) and b or a
+                    if type(newKey) == "string" then newKey = ResolveBind(newKey) end
+                    key = (typeof(newKey) == "EnumItem") and newKey or Enum.KeyCode.Unknown
                     ValueLabel.Text = "[" .. GetBindName(key) .. "]"
                 end,
-                SetMode = function(newMode)
-                    mode = newMode or "Toggle"
-                end
+                SetMode = function(a, b)
+                    local newMode = (a == BindObj) and b or a
+                    mode = (newMode == "Hold") and "Hold" or "Toggle"
+                end,
+                GetKey = function() return key end,
+                GetMode = function() return mode end
             }
+            return BindObj
         end
 
         function ToggleObj:AddColorPicker(default, callback, cpIdx)
             cpIdx = cpIdx or (idx .. "Color")
-            default = default or Color3.new(1, 1, 1)
-            callback = callback or function() end
             ToggleObj.HasColorPicker = true
-            
-            local h, s, v = Color3.toHSV(default)
-            local open = false
 
-            local BoxOutline = Create("Frame", {
-                Parent = ToggleFrame,
-                BackgroundColor3 = Library.Theme.OutlineColor,
-                Position = UDim2.new(1, -20, 0, 2),
-                Size = UDim2.new(0, 20, 0, 10),
-                BorderSizePixel = 0,
-                ThemeMap = {BackgroundColor3 = "OutlineColor"}
+            local cpObj = BuildColorPicker({
+                ScreenGui = ScreenGui,
+                WindowObj = WindowObj,
+                SwatchParent = ToggleFrame,
+                AnchorFrame = ToggleFrame,
+                Default = default,
+                Callback = callback,
+                Idx = cpIdx,
             })
-            local BoxInline = Create("Frame", {
-                Parent = BoxOutline,
-                BackgroundColor3 = Library.Theme.InlineColor,
-                Position = UDim2.new(0, 1, 0, 1),
-                Size = UDim2.new(1, -2, 1, -2),
-                BorderSizePixel = 0,
-                ThemeMap = {BackgroundColor3 = "InlineColor"}
-            })
-            local ColorDisplay = Create("Frame", {
-                Parent = BoxInline,
-                BackgroundColor3 = default,
-                Position = UDim2.new(0, 1, 0, 1),
-                Size = UDim2.new(1, -2, 1, -2),
-                BorderSizePixel = 0
-            })
-
-            local ToggleBtn = Create("TextButton", {
-                Parent = BoxOutline,
-                BackgroundTransparency = 1,
-                Size = UDim2.new(1, 0, 1, 0),
-                Text = "",
-                ZIndex = 5
-            })
-
-            local FlyoutOutline = Create("Frame", {
-                Parent = ScreenGui,
-                BackgroundColor3 = Library.Theme.OutlineColor,
-                Size = UDim2.new(0, 160, 0, 175),
-                Visible = false,
-                ZIndex = 6000,
-                ThemeMap = {BackgroundColor3 = "OutlineColor"}
-            })
-            local FlyoutInline = Create("Frame", {
-                Parent = FlyoutOutline,
-                BackgroundColor3 = Library.Theme.InlineColor,
-                Position = UDim2.new(0, 1, 0, 1),
-                Size = UDim2.new(1, -2, 1, -2),
-                BorderSizePixel = 0,
-                ZIndex = 6000,
-                ThemeMap = {BackgroundColor3 = "InlineColor"}
-            })
-            local FlyoutBg = Create("Frame", {
-                Parent = FlyoutInline,
-                BackgroundColor3 = Library.Theme.GroupBoxColor,
-                Position = UDim2.new(0, 1, 0, 1),
-                Size = UDim2.new(1, -2, 1, -2),
-                BorderSizePixel = 0,
-                ZIndex = 6000,
-                ThemeMap = {BackgroundColor3 = "GroupBoxColor"}
-            })
-
-            -- SV Map
-            local SVOutline = Create("Frame", {
-                Parent = FlyoutBg,
-                BackgroundColor3 = Library.Theme.OutlineColor,
-                Position = UDim2.new(0, 5, 0, 5),
-                Size = UDim2.new(1, -10, 0, 140),
-                BorderSizePixel = 0,
-                ZIndex = 6001,
-                ThemeMap = {BackgroundColor3 = "OutlineColor"}
-            })
-            local SVBg = Create("Frame", {
-                Parent = SVOutline,
-                BackgroundColor3 = Color3.fromHSV(h, 1, 1),
-                Position = UDim2.new(0, 1, 0, 1),
-                Size = UDim2.new(1, -2, 1, -2),
-                BorderSizePixel = 0,
-                ZIndex = 16
-            })
-            local SVWhite = Create("Frame", {
-                Parent = SVBg,
-                BackgroundColor3 = Color3.new(1,1,1),
-                Size = UDim2.new(1, 0, 1, 0),
-                BorderSizePixel = 0,
-                ZIndex = 6002
-            })
-            Create("UIGradient", {
-                Parent = SVWhite,
-                Transparency = NumberSequence.new({
-                    NumberSequenceKeypoint.new(0, 0),
-                    NumberSequenceKeypoint.new(1, 1)
-                })
-            })
-            local SVBlack = Create("Frame", {
-                Parent = SVBg,
-                BackgroundColor3 = Color3.new(0,0,0),
-                Size = UDim2.new(1, 0, 1, 0),
-                BorderSizePixel = 0,
-                ZIndex = 6003
-            })
-            Create("UIGradient", {
-                Parent = SVBlack,
-                Rotation = 90,
-                Transparency = NumberSequence.new({
-                    NumberSequenceKeypoint.new(0, 1),
-                    NumberSequenceKeypoint.new(1, 0)
-                })
-            })
-
-            local SVCursor = Create("Frame", {
-                Parent = SVBg,
-                BackgroundColor3 = Color3.new(1,1,1),
-                Size = UDim2.new(0, 4, 0, 4),
-                Position = UDim2.new(s, -2, 1 - v, -2),
-                BorderSizePixel = 1,
-                BorderColor3 = Color3.new(0,0,0),
-                ZIndex = 6004
-            })
-
-            -- Hue Map
-            local HueOutline = Create("Frame", {
-                Parent = FlyoutBg,
-                BackgroundColor3 = Library.Theme.OutlineColor,
-                Position = UDim2.new(0, 5, 0, 150),
-                Size = UDim2.new(1, -10, 0, 15),
-                BorderSizePixel = 0,
-                ZIndex = 6001,
-                ThemeMap = {BackgroundColor3 = "OutlineColor"}
-            })
-            local HueBg = Create("Frame", {
-                Parent = HueOutline,
-                BackgroundColor3 = Color3.new(1,1,1),
-                Position = UDim2.new(0, 1, 0, 1),
-                Size = UDim2.new(1, -2, 1, -2),
-                BorderSizePixel = 0,
-                ZIndex = 16
-            })
-            Create("UIGradient", {
-                Parent = HueBg,
-                Color = ColorSequence.new({
-                    ColorSequenceKeypoint.new(0, Color3.fromHSV(0, 1, 1)),
-                    ColorSequenceKeypoint.new(0.167, Color3.fromHSV(0.167, 1, 1)),
-                    ColorSequenceKeypoint.new(0.333, Color3.fromHSV(0.333, 1, 1)),
-                    ColorSequenceKeypoint.new(0.5, Color3.fromHSV(0.5, 1, 1)),
-                    ColorSequenceKeypoint.new(0.667, Color3.fromHSV(0.667, 1, 1)),
-                    ColorSequenceKeypoint.new(0.833, Color3.fromHSV(0.833, 1, 1)),
-                    ColorSequenceKeypoint.new(1, Color3.fromHSV(1, 1, 1))
-                })
-            })
-            local HueCursor = Create("Frame", {
-                Parent = HueBg,
-                BackgroundColor3 = Color3.new(1,1,1),
-                Size = UDim2.new(0, 2, 1, 0),
-                Position = UDim2.new(h, -1, 0, 0),
-                BorderSizePixel = 1,
-                BorderColor3 = Color3.new(0,0,0),
-                ZIndex = 6002
-            })
-
-            local function UpdateColor()
-                local c = Color3.fromHSV(h, s, v)
-                ColorDisplay.BackgroundColor3 = c
-                SVBg.BackgroundColor3 = Color3.fromHSV(h, 1, 1)
-                SVCursor.Position = UDim2.new(math.clamp(s, 0, 1), -2, math.clamp(1 - v, 0, 1), -2)
-                HueCursor.Position = UDim2.new(math.clamp(h, 0, 1), -1, 0, 0)
-                if Library.Options[cpIdx] then Library.Options[cpIdx].Value = c end
-                callback(c)
-            end
-
-            local draggingSV = false
-            local draggingHue = false
-
-            local function UpdateSV(input)
-                local pos = input.Position
-                local bounds = SVBg.AbsoluteSize
-                local offset = SVBg.AbsolutePosition
-                s = math.clamp((pos.X - offset.X) / bounds.X, 0, 1)
-                v = 1 - math.clamp((pos.Y - offset.Y) / bounds.Y, 0, 1)
-                UpdateColor()
-            end
-
-            local function UpdateH(input)
-                local pos = input.Position
-                local bounds = HueBg.AbsoluteSize
-                local offset = HueBg.AbsolutePosition
-                h = math.clamp((pos.X - offset.X) / bounds.X, 0, 1)
-                UpdateColor()
-            end
-
-            SVOutline.InputBegan:Connect(function(input)
-                if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-                    draggingSV = true
-                    UpdateSV(input)
-                end
-            end)
-            HueOutline.InputBegan:Connect(function(input)
-                if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-                    draggingHue = true
-                    UpdateH(input)
-                end
-            end)
-            
-            UserInputService.InputEnded:Connect(function(input)
-                if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-                    draggingSV = false
-                    draggingHue = false
-                end
-            end)
-            UserInputService.InputChanged:Connect(function(input)
-                if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
-                    if draggingSV then UpdateSV(input) end
-                    if draggingHue then UpdateH(input) end
-                end
-            end)
-
-            ToggleBtn.MouseButton1Click:Connect(function()
-                open = not open
-                FlyoutOutline.Visible = open
-                if open then
-                    FlyoutOutline.Position = UDim2.new(0, BoxOutline.AbsolutePosition.X + 25, 0, BoxOutline.AbsolutePosition.Y)
-                end
-            end)
-            
-            ToggleFrame:GetPropertyChangedSignal("AbsolutePosition"):Connect(function()
-                if open then
-                    FlyoutOutline.Position = UDim2.new(0, BoxOutline.AbsolutePosition.X + 25, 0, BoxOutline.AbsolutePosition.Y)
-                end
-            end)
-            
-            UserInputService.InputBegan:Connect(function(input)
-                if open and (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch) then
-                    local m = input.Position
-                    local fPos, fSize = FlyoutOutline.AbsolutePosition, FlyoutOutline.AbsoluteSize
-                    local bPos, bSize = BoxOutline.AbsolutePosition, BoxOutline.AbsoluteSize
-                    
-                    local inFlyout = m.X >= fPos.X and m.X <= fPos.X + fSize.X and m.Y >= fPos.Y and m.Y <= fPos.Y + fSize.Y
-                    local inBox = m.X >= bPos.X and m.X <= bPos.X + bSize.X and m.Y >= bPos.Y and m.Y <= bPos.Y + bSize.Y
-                    
-                    if not inFlyout and not inBox then
-                        open = false
-                        FlyoutOutline.Visible = false
-                    end
-                end
-            end)
-            
-            UpdateColor()
-            
-            local cpObj = {
-                Type = "ColorPicker",
-                Value = default,
-                UpdateColors = function()
-                end,
-                Save = function(self) return {R = self.Value.R, G = self.Value.G, B = self.Value.B} end,
-                Load = function(self, val)
-                    if type(val) == "table" and val.R then
-                        self:SetValue(Color3.new(val.R, val.G, val.B))
-                    end
-                end,
-                SetValue = function(self, c)
-                    if type(c) == "table" then
-                        local r = c.R or c.r or c[1] or 1
-                        local g = c.G or c.g or c[2] or 1
-                        local b = c.B or c.b or c[3] or 1
-                        if r > 1 or g > 1 or b > 1 then
-                            c = Color3.fromRGB(r, g, b)
-                        else
-                            c = Color3.new(r, g, b)
-                        end
-                    end
-                    h, s, v = Color3.toHSV(c)
-                    UpdateColor()
-                end
-            }
             Library.Options[cpIdx] = cpObj
-            
+
+            -- The keybind chip shares this row, so shift it clear of the swatch.
             for _, child in pairs(ToggleFrame:GetChildren()) do
                 if child:IsA("TextLabel") and child.Name ~= "Label" then
                     child.Position = UDim2.new(1, -75, 0, 0)
                 end
             end
-            
+
             return cpObj
         end
 
@@ -1071,9 +1405,10 @@ ThemeMap = {Color = "OutlineColor"}
         })
 
         local function UpdateSlider(val, instant)
-            value = math.clamp(val, min, max)
-            value = math.floor(value)
-            local percent = (value - min) / (max - min)
+            value = math.clamp(tonumber(val) or min, min, max)
+            value = math.floor(value + 0.5)   -- nearest, not always-down
+            -- max == min would divide by zero and leave the fill at nan.
+            local percent = (max > min) and ((value - min) / (max - min)) or 0
             if instant then
                 SliderFill.Size = UDim2.new(percent, 0, 1, 0)
             else
@@ -1087,8 +1422,11 @@ ThemeMap = {Color = "OutlineColor"}
         local dragging = false
         
         local function move(input)
+            -- Zero width while the tab is hidden; dividing by it yields nan.
+            local width = SliderBg.AbsoluteSize.X
+            if width <= 0 then return end
             local pos = input.Position.X - SliderBg.AbsolutePosition.X
-            local percent = math.clamp(pos / SliderBg.AbsoluteSize.X, 0, 1)
+            local percent = math.clamp(pos / width, 0, 1)
             local newValue = min + (max - min) * percent
             UpdateSlider(newValue, false)
         end
@@ -1100,13 +1438,13 @@ ThemeMap = {Color = "OutlineColor"}
             end
         end)
 
-        UserInputService.InputEnded:Connect(function(input)
+        TrackInput(UserInputService.InputEnded, function(input)
             if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
                 dragging = false
             end
         end)
 
-        UserInputService.InputChanged:Connect(function(input)
+        TrackInput(UserInputService.InputChanged, function(input)
             if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
                 move(input)
             end
@@ -1142,6 +1480,8 @@ ThemeMap = {Color = "OutlineColor"}
         
         local selected = default
         local open = false
+        -- Forward-declared so the methods below can tell a colon call from a dot call.
+        local obj
         
         local DropdownFrame = Create("Frame", {
             Name = name.."_Dropdown",
@@ -1304,6 +1644,14 @@ ThemeMap = {BackgroundColor3 = "GroupBoxColor"}
             Scrollbar.Refresh()
         end)
         
+        local function CloseList()
+            if not open then return end
+            open = false
+            OptsOutline.Visible = false
+            Indicator.Text = "▼"
+        end
+        if WindowObj.RegisterPopup then WindowObj.RegisterPopup(CloseList) end
+
         local optionButtons = {}
         
         local function SetOptions(newOptions)
@@ -1335,9 +1683,7 @@ ThemeMap = {BackgroundColor3 = "GroupBoxColor"}
                         b.TextColor3 = Library.Theme.TextColor
                     end
                     OptBtn.TextColor3 = Library.Theme.AccentColor
-                    open = false
-                    OptsOutline.Visible = false
-                    Indicator.Text = "▼"
+                    CloseList()
                 end)
                 
                 OptBtn.MouseEnter:Connect(function() OptBtn.BackgroundColor3 = Library.Theme.InlineColor end)
@@ -1350,13 +1696,18 @@ ThemeMap = {BackgroundColor3 = "GroupBoxColor"}
         SetOptions(options)
         
         ToggleBtn.MouseButton1Click:Connect(function()
-            open = not open
-            OptsOutline.Visible = open
-            Indicator.Text = open and "▲" or "▼"
-            if open then UpdateOptions() end
+            if open then
+                CloseList()
+                return
+            end
+            if WindowObj.ClosePopups then WindowObj.ClosePopups(CloseList) end
+            open = true
+            OptsOutline.Visible = true
+            Indicator.Text = "▲"
+            UpdateOptions()
         end)
         
-        UserInputService.InputBegan:Connect(function(input)
+        TrackInput(UserInputService.InputBegan, function(input)
             if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
                 if open then
                     local mPos = input.Position
@@ -1367,20 +1718,18 @@ ThemeMap = {BackgroundColor3 = "GroupBoxColor"}
                     local inBox = (mPos.X >= bPos.X and mPos.X <= bPos.X + bSize.X and mPos.Y >= bPos.Y and mPos.Y <= bPos.Y + bSize.Y)
                     
                     if not inOptions and not inBox then
-                        open = false
-                        OptsOutline.Visible = false
-                        Indicator.Text = "▼"
+                        CloseList()
                     end
                 end
             end
         end)
 
-        local obj = {
+        obj = {
             Type = "Dropdown",
             Value = selected,
             UpdateColors = function()
                 Label.TextColor3 = Library.Theme.TextColor
-                SelectedLabel.TextColor3 = Library.Theme.TextMuted
+                SelectedLabel.TextColor3 = Library.Theme.TextColor
                 for _, b in pairs(optionButtons) do
                     b.TextColor3 = (string.sub(b.Text, 3) == tostring(selected)) and Library.Theme.AccentColor or Library.Theme.TextColor
                 end
@@ -1396,7 +1745,13 @@ ThemeMap = {BackgroundColor3 = "GroupBoxColor"}
                 end
                 callback(newVal)
             end,
-            RefreshOptions = function(newOptions) SetOptions(newOptions) end,
+            -- Accepts both `dd:RefreshOptions(list)` and `dd.RefreshOptions(list)`.
+            -- Called with a colon before, `self` was consumed as the option list
+            -- and ipairs() over it yielded nothing, emptying the dropdown.
+            RefreshOptions = function(a, b)
+                local newOptions = (a == obj) and b or a
+                SetOptions(type(newOptions) == "table" and newOptions or {})
+            end,
             AddTooltip = function(self, text)
                 if not text or text == "" then return end
                 BoxOutline.MouseEnter:Connect(function() WindowObj.ShowTooltip(text) end)
@@ -1416,6 +1771,8 @@ ThemeMap = {BackgroundColor3 = "GroupBoxColor"}
         local selected = {}
         for _, v in ipairs(default) do selected[v] = true end
         local open = false
+        -- Forward-declared so the methods below can tell a colon call from a dot call.
+        local obj
         
         local DropdownFrame = Create("Frame", {
             Name = name.."_MultiDropdown",
@@ -1590,6 +1947,14 @@ ThemeMap = {BackgroundColor3 = "GroupBoxColor"}
             Scrollbar.Refresh()
         end)
         
+        local function CloseList()
+            if not open then return end
+            open = false
+            OptsOutline.Visible = false
+            Indicator.Text = "▼"
+        end
+        if WindowObj.RegisterPopup then WindowObj.RegisterPopup(CloseList) end
+
         local optionButtons = {}
         
         local function SetOptions(newOptions)
@@ -1637,10 +2002,15 @@ ThemeMap = {BackgroundColor3 = "GroupBoxColor"}
         SetOptions(options)
         
         ToggleBtn.MouseButton1Click:Connect(function()
-            open = not open
-            OptsOutline.Visible = open
-            Indicator.Text = open and "▲" or "▼"
-            if open then UpdateOptions() end
+            if open then
+                CloseList()
+                return
+            end
+            if WindowObj.ClosePopups then WindowObj.ClosePopups(CloseList) end
+            open = true
+            OptsOutline.Visible = true
+            Indicator.Text = "▲"
+            UpdateOptions()
         end)
         
         local mConn = UserInputService.InputBegan:Connect(function(input)
@@ -1654,21 +2024,19 @@ ThemeMap = {BackgroundColor3 = "GroupBoxColor"}
                     local inBox = (mPos.X >= bPos.X and mPos.X <= bPos.X + bSize.X and mPos.Y >= bPos.Y and mPos.Y <= bPos.Y + bSize.Y)
                     
                     if not inOptions and not inBox then
-                        open = false
-                        OptsOutline.Visible = false
-                        Indicator.Text = "▼"
+                        CloseList()
                     end
                 end
             end
         end)
         table.insert(Library.Connections, mConn)
 
-        local obj = {
+        obj = {
             Type = "MultiDropdown",
             Value = selected,
             UpdateColors = function()
                 Label.TextColor3 = Library.Theme.TextColor
-                SelectedLabel.TextColor3 = Library.Theme.TextMuted
+                SelectedLabel.TextColor3 = Library.Theme.TextColor
                 for _, b in pairs(optionButtons) do
                     local optText = string.sub(b.Text, 7)
                     b.TextColor3 = selected[optText] and Library.Theme.AccentColor or Library.Theme.TextColor
@@ -1681,13 +2049,26 @@ ThemeMap = {BackgroundColor3 = "GroupBoxColor"}
             end,
             Load = function(self, val) self:SetValue(val) end,
             SetValue = function(self, newTable)
-                selected = {}
-                for _, v in ipairs(newTable) do selected[v] = true end
+                -- Cleared in place: obj.Value aliases this table, so rebinding it
+                -- would strand Value (and therefore Save) on the old selection.
+                table.clear(selected)
+                for _, v in ipairs(newTable or {}) do selected[v] = true end
                 SetOptions(options)
                 SelectedLabel.Text = GetSelectedString()
-                callback(newTable)
+                -- Same shape the click handler passes: the selected options in order.
+                local activeList = {}
+                for _, o in ipairs(options) do
+                    if selected[o] then table.insert(activeList, o) end
+                end
+                callback(activeList)
             end,
-            RefreshOptions = function(newOptions) SetOptions(newOptions) end,
+            -- Accepts both `dd:RefreshOptions(list)` and `dd.RefreshOptions(list)`.
+            -- Called with a colon before, `self` was consumed as the option list
+            -- and ipairs() over it yielded nothing, emptying the dropdown.
+            RefreshOptions = function(a, b)
+                local newOptions = (a == obj) and b or a
+                SetOptions(type(newOptions) == "table" and newOptions or {})
+            end,
             AddTooltip = function(self, text)
                 if not text or text == "" then return end
                 BoxOutline.MouseEnter:Connect(function() WindowObj.ShowTooltip(text) end)
@@ -1775,7 +2156,7 @@ ThemeMap = {TextColor3 = "TextMuted"}
             refresh()
         end)
 
-        UserInputService.InputBegan:Connect(function(input, processed)
+        TrackInput(UserInputService.InputBegan, function(input, processed)
             if binding then
                 local newBind = GetBindFromInput(input)
                 if newBind ~= nil then
@@ -1800,7 +2181,7 @@ ThemeMap = {TextColor3 = "TextMuted"}
             end
         end)
 
-        UserInputService.InputEnded:Connect(function(input)
+        TrackInput(UserInputService.InputEnded, function(input)
             if mode == "Hold" and held and InputMatchesBind(input, key) then
                 held = false
                 callback(key)
@@ -1817,7 +2198,10 @@ ThemeMap = {TextColor3 = "TextMuted"}
                 end
             end,
             SetValue = function(self, k)
-                key = k or Enum.KeyCode.Unknown
+                -- A bare string used to fall through to key.Name = nil, silently
+                -- clearing the bind instead of setting it.
+                if type(k) == "string" then k = ResolveBind(k) end
+                key = (typeof(k) == "EnumItem") and k or Enum.KeyCode.Unknown
                 if Library.Options[idx] then Library.Options[idx].Value = key.Name end
                 refresh()
             end,
@@ -1840,11 +2224,6 @@ ThemeMap = {TextColor3 = "TextMuted"}
 
     function Obj:AddColorPicker(name, default, callback, idx)
         idx = idx or name:gsub(" ", "")
-        default = default or Color3.new(1, 1, 1)
-        callback = callback or function() end
-        
-        local h, s, v = Color3.toHSV(default)
-        local open = false
 
         local PickerFrame = Create("Frame", {
             Name = name.."_ColorPicker",
@@ -1862,286 +2241,19 @@ ThemeMap = {TextColor3 = "TextMuted"}
             TextColor3 = Library.Theme.TextColor,
             TextSize = 12,
             TextXAlignment = Enum.TextXAlignment.Left,
-ThemeMap = {TextColor3 = "TextColor"}
+            ThemeMap = {TextColor3 = "TextColor"}
         })
 
-        local BoxOutline = Create("Frame", {
-            Parent = PickerFrame,
-            BackgroundColor3 = Library.Theme.OutlineColor,
-            Position = UDim2.new(1, -20, 0, 2),
-            Size = UDim2.new(0, 20, 0, 10),
-            BorderSizePixel = 0,
-ThemeMap = {BackgroundColor3 = "OutlineColor"}
+        local obj = BuildColorPicker({
+            ScreenGui = ScreenGui,
+            WindowObj = WindowObj,
+            SwatchParent = PickerFrame,
+            ClickParent = PickerFrame,   -- the whole row opens the flyout
+            AnchorFrame = PickerFrame,
+            Default = default,
+            Callback = callback,
+            Idx = idx,
         })
-        local BoxInline = Create("Frame", {
-            Parent = BoxOutline,
-            BackgroundColor3 = Library.Theme.InlineColor,
-            Position = UDim2.new(0, 1, 0, 1),
-            Size = UDim2.new(1, -2, 1, -2),
-            BorderSizePixel = 0,
-ThemeMap = {BackgroundColor3 = "InlineColor"}
-        })
-        local ColorDisplay = Create("Frame", {
-            Parent = BoxInline,
-            BackgroundColor3 = default,
-            Position = UDim2.new(0, 1, 0, 1),
-            Size = UDim2.new(1, -2, 1, -2),
-            BorderSizePixel = 0
-        })
-
-        local ToggleBtn = Create("TextButton", {
-            Parent = PickerFrame,
-            BackgroundTransparency = 1,
-            Size = UDim2.new(1, 0, 1, 0),
-            Text = "",
-            ZIndex = 5
-        })
-
-        local FlyoutOutline = Create("Frame", {
-            Parent = ScreenGui,
-            BackgroundColor3 = Library.Theme.OutlineColor,
-            Size = UDim2.new(0, 160, 0, 175),
-            Visible = false,
-            ZIndex = 6000,
-ThemeMap = {BackgroundColor3 = "OutlineColor"}
-        })
-        local FlyoutInline = Create("Frame", {
-            Parent = FlyoutOutline,
-            BackgroundColor3 = Library.Theme.InlineColor,
-            Position = UDim2.new(0, 1, 0, 1),
-            Size = UDim2.new(1, -2, 1, -2),
-            BorderSizePixel = 0,
-            ZIndex = 6000,
-ThemeMap = {BackgroundColor3 = "InlineColor"}
-        })
-        local FlyoutBg = Create("Frame", {
-            Parent = FlyoutInline,
-            BackgroundColor3 = Library.Theme.GroupBoxColor,
-            Position = UDim2.new(0, 1, 0, 1),
-            Size = UDim2.new(1, -2, 1, -2),
-            BorderSizePixel = 0,
-            ZIndex = 6000,
-ThemeMap = {BackgroundColor3 = "GroupBoxColor"}
-        })
-
-        -- SV Map
-        local SVOutline = Create("Frame", {
-            Parent = FlyoutBg,
-            BackgroundColor3 = Library.Theme.OutlineColor,
-            Position = UDim2.new(0, 5, 0, 5),
-            Size = UDim2.new(1, -10, 0, 140),
-            BorderSizePixel = 0,
-            ZIndex = 6001,
-ThemeMap = {BackgroundColor3 = "OutlineColor"}
-        })
-        local SVBg = Create("Frame", {
-            Parent = SVOutline,
-            BackgroundColor3 = Color3.fromHSV(h, 1, 1),
-            Position = UDim2.new(0, 1, 0, 1),
-            Size = UDim2.new(1, -2, 1, -2),
-            BorderSizePixel = 0,
-            ZIndex = 16
-        })
-        local SVWhite = Create("Frame", {
-            Parent = SVBg,
-            BackgroundColor3 = Color3.new(1,1,1),
-            Size = UDim2.new(1, 0, 1, 0),
-            BorderSizePixel = 0,
-            ZIndex = 6002
-        })
-        Create("UIGradient", {
-            Parent = SVWhite,
-            Transparency = NumberSequence.new({
-                NumberSequenceKeypoint.new(0, 0),
-                NumberSequenceKeypoint.new(1, 1)
-            })
-        })
-        local SVBlack = Create("Frame", {
-            Parent = SVBg,
-            BackgroundColor3 = Color3.new(0,0,0),
-            Size = UDim2.new(1, 0, 1, 0),
-            BorderSizePixel = 0,
-            ZIndex = 6003
-        })
-        Create("UIGradient", {
-            Parent = SVBlack,
-            Rotation = 90,
-            Transparency = NumberSequence.new({
-                NumberSequenceKeypoint.new(0, 1),
-                NumberSequenceKeypoint.new(1, 0)
-            })
-        })
-
-        local SVCursor = Create("Frame", {
-            Parent = SVBg,
-            BackgroundColor3 = Color3.new(1,1,1),
-            Size = UDim2.new(0, 4, 0, 4),
-            Position = UDim2.new(s, -2, 1 - v, -2),
-            BorderSizePixel = 1,
-            BorderColor3 = Color3.new(0,0,0),
-            ZIndex = 6004
-        })
-
-        -- Hue Map
-        local HueOutline = Create("Frame", {
-            Parent = FlyoutBg,
-            BackgroundColor3 = Library.Theme.OutlineColor,
-            Position = UDim2.new(0, 5, 0, 150),
-            Size = UDim2.new(1, -10, 0, 15),
-            BorderSizePixel = 0,
-            ZIndex = 6001,
-ThemeMap = {BackgroundColor3 = "OutlineColor"}
-        })
-        local HueBg = Create("Frame", {
-            Parent = HueOutline,
-            BackgroundColor3 = Color3.new(1,1,1),
-            Position = UDim2.new(0, 1, 0, 1),
-            Size = UDim2.new(1, -2, 1, -2),
-            BorderSizePixel = 0,
-            ZIndex = 16
-        })
-        Create("UIGradient", {
-            Parent = HueBg,
-            Color = ColorSequence.new({
-                ColorSequenceKeypoint.new(0, Color3.fromHSV(0, 1, 1)),
-                ColorSequenceKeypoint.new(0.167, Color3.fromHSV(0.167, 1, 1)),
-                ColorSequenceKeypoint.new(0.333, Color3.fromHSV(0.333, 1, 1)),
-                ColorSequenceKeypoint.new(0.5, Color3.fromHSV(0.5, 1, 1)),
-                ColorSequenceKeypoint.new(0.667, Color3.fromHSV(0.667, 1, 1)),
-                ColorSequenceKeypoint.new(0.833, Color3.fromHSV(0.833, 1, 1)),
-                ColorSequenceKeypoint.new(1, Color3.fromHSV(1, 1, 1))
-            })
-        })
-        local HueCursor = Create("Frame", {
-            Parent = HueBg,
-            BackgroundColor3 = Color3.new(1,1,1),
-            Size = UDim2.new(0, 2, 1, 0),
-            Position = UDim2.new(h, -1, 0, 0),
-            BorderSizePixel = 1,
-            BorderColor3 = Color3.new(0,0,0),
-            ZIndex = 6002
-        })
-
-        local function UpdateColor()
-            local c = Color3.fromHSV(h, s, v)
-            ColorDisplay.BackgroundColor3 = c
-            SVBg.BackgroundColor3 = Color3.fromHSV(h, 1, 1)
-            SVCursor.Position = UDim2.new(math.clamp(s, 0, 1), -2, math.clamp(1 - v, 0, 1), -2)
-            HueCursor.Position = UDim2.new(math.clamp(h, 0, 1), -1, 0, 0)
-            if Library.Options[idx] then Library.Options[idx].Value = c end
-            callback(c)
-        end
-
-        local draggingSV = false
-        local draggingHue = false
-
-        local function UpdateSV(input)
-            local pos = input.Position
-            local bounds = SVBg.AbsoluteSize
-            local offset = SVBg.AbsolutePosition
-            s = math.clamp((pos.X - offset.X) / bounds.X, 0, 1)
-            v = 1 - math.clamp((pos.Y - offset.Y) / bounds.Y, 0, 1)
-            UpdateColor()
-        end
-
-        local function UpdateH(input)
-            local pos = input.Position
-            local bounds = HueBg.AbsoluteSize
-            local offset = HueBg.AbsolutePosition
-            h = math.clamp((pos.X - offset.X) / bounds.X, 0, 1)
-            UpdateColor()
-        end
-
-        SVOutline.InputBegan:Connect(function(input)
-            if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-                draggingSV = true
-                UpdateSV(input)
-            end
-        end)
-        HueOutline.InputBegan:Connect(function(input)
-            if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-                draggingHue = true
-                UpdateH(input)
-            end
-        end)
-        
-        UserInputService.InputEnded:Connect(function(input)
-            if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-                draggingSV = false
-                draggingHue = false
-            end
-        end)
-        UserInputService.InputChanged:Connect(function(input)
-            if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
-                if draggingSV then UpdateSV(input) end
-                if draggingHue then UpdateH(input) end
-            end
-        end)
-
-        ToggleBtn.MouseButton1Click:Connect(function()
-            open = not open
-            FlyoutOutline.Visible = open
-            if open then
-                FlyoutOutline.Position = UDim2.new(0, BoxOutline.AbsolutePosition.X + 25, 0, BoxOutline.AbsolutePosition.Y)
-            end
-        end)
-        
-        PickerFrame:GetPropertyChangedSignal("AbsolutePosition"):Connect(function()
-            if open then
-                FlyoutOutline.Position = UDim2.new(0, BoxOutline.AbsolutePosition.X + 25, 0, BoxOutline.AbsolutePosition.Y)
-            end
-        end)
-        
-        UserInputService.InputBegan:Connect(function(input)
-            if open and (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch) then
-                local m = input.Position
-                local fPos, fSize = FlyoutOutline.AbsolutePosition, FlyoutOutline.AbsoluteSize
-                local bPos, bSize = BoxOutline.AbsolutePosition, BoxOutline.AbsoluteSize
-                
-                local inFlyout = m.X >= fPos.X and m.X <= fPos.X + fSize.X and m.Y >= fPos.Y and m.Y <= fPos.Y + fSize.Y
-                local inBox = m.X >= bPos.X and m.X <= bPos.X + bSize.X and m.Y >= bPos.Y and m.Y <= bPos.Y + bSize.Y
-                
-                if not inFlyout and not inBox then
-                    open = false
-                    FlyoutOutline.Visible = false
-                end
-            end
-        end)
-        
-        UpdateColor()
-        
-        local obj = {
-            Type = "ColorPicker",
-            Value = default,
-            UpdateColors = function()
-                Label.TextColor3 = Library.Theme.TextColor
-            end,
-            Save = function(self) return {R = self.Value.R, G = self.Value.G, B = self.Value.B} end,
-            Load = function(self, val)
-                if type(val) == "table" and val.R then
-                    self:SetValue(Color3.new(val.R, val.G, val.B))
-                end
-            end,
-            SetValue = function(self, c)
-                if type(c) == "table" then
-                    local r = c.R or c.r or c[1] or 1
-                    local g = c.G or c.g or c[2] or 1
-                    local b = c.B or c.b or c[3] or 1
-                    if r > 1 or g > 1 or b > 1 then
-                        c = Color3.fromRGB(r, g, b)
-                    else
-                        c = Color3.new(r, g, b)
-                    end
-                end
-                h, s, v = Color3.toHSV(c)
-                UpdateColor()
-            end,
-            AddTooltip = function(self, text)
-                if not text or text == "" then return end
-                BoxOutline.MouseEnter:Connect(function() WindowObj.ShowTooltip(text) end)
-                BoxOutline.MouseLeave:Connect(function() WindowObj.HideTooltip() end)
-            end
-        }
         Library.Options[idx] = obj
         return obj
     end
@@ -2228,6 +2340,18 @@ ThemeMap = {TextColor3 = "TextColor"}
     WindowObj.ShowTooltip = function(text) UpdateTooltip(text) end
     WindowObj.HideTooltip = function() UpdateTooltip(nil) end
 
+    -- Dropdown lists and colour-picker flyouts are parented to the ScreenGui so
+    -- they can overhang the window. Nothing hides them automatically, so they
+    -- register a close function here and are shut when another one opens or the
+    -- tab changes -- otherwise they float over whatever is shown next.
+    local Popups = {}
+    WindowObj.RegisterPopup = function(close) table.insert(Popups, close) end
+    WindowObj.ClosePopups = function(except)
+        for _, close in ipairs(Popups) do
+            if close ~= except then close() end
+        end
+    end
+
     -- Watermark UI
     local WatermarkOutline = Create("Frame", {
         Name = "Watermark",
@@ -2303,7 +2427,6 @@ ThemeMap = {TextColor3 = "TextColor"}
     function WindowObj:Notify(text, duration)
         duration = duration or 3
         
-        local bounds = GetTextBounds(text, Library.Theme.Font, 12)
         local NotifOutline = Create("Frame", {
             Parent = NotificationContainer,
             BackgroundColor3 = Library.Theme.OutlineColor,
@@ -2340,7 +2463,7 @@ ThemeMap = {BackgroundColor3 = "AccentColor"}
             Position = UDim2.new(0, 10, 0, 0),
             Size = UDim2.new(1, -10, 1, 0),
             Font = Library.Theme.Font,
-            Text = text,
+            Text = tostring(text or ""),
             TextColor3 = Library.Theme.TextColor,
             TextSize = 12,
             TextXAlignment = Enum.TextXAlignment.Left,
@@ -2349,6 +2472,8 @@ ThemeMap = {TextColor3 = "TextColor"}
         
         task.spawn(function()
             task.wait(duration)
+            -- Without this the theme map holds every notification ever shown.
+            Untrack(NotifOutline)
             NotifOutline:Destroy()
         end)
     end
@@ -2565,6 +2690,8 @@ ThemeMap = {TextColor3 = "TextMuted"}
         })
 
         TabButton.MouseButton1Click:Connect(function()
+            -- Flyouts live on the ScreenGui, not in the tab, so close them by hand.
+            if WindowObj.ClosePopups then WindowObj.ClosePopups() end
             for _, tab in pairs(WindowObj.Tabs) do
                 tab.Content.Visible = false
                 tab.Label.TextColor3 = Library.Theme.TextMuted
