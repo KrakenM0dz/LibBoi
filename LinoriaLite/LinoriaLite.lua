@@ -935,14 +935,14 @@ ThemeMap = {BackgroundColor3 = "InlineColor"}
             Name = name.."_Toggle",
             Parent = ElementContainer,
             BackgroundTransparency = 1,
-            Size = UDim2.new(1, 0, 0, 14)
+            Size = UDim2.new(1, 0, 0, 18)
         })
 
         local CheckOutline = Create("Frame", {
             Parent = ToggleFrame,
             BackgroundColor3 = Library.Theme.OutlineColor,
-            Size = UDim2.new(0, 10, 0, 10),
-            Position = UDim2.new(0, 0, 0.5, -5),
+            Size = UDim2.new(0, 15, 0, 15),
+            Position = UDim2.new(0, 0, 0.5, -7),
             BorderSizePixel = 0,
 ThemeMap = {BackgroundColor3 = "OutlineColor"}
         })
@@ -966,8 +966,8 @@ ThemeMap = {BackgroundColor3 = "InlineColor"}
             Name = "Label",
             Parent = ToggleFrame,
             BackgroundTransparency = 1,
-            Position = UDim2.new(0, 18, 0, 0),
-            Size = UDim2.new(1, -18, 1, 0),
+            Position = UDim2.new(0, 23, 0, 0),
+            Size = UDim2.new(1, -23, 1, 0),
             Font = Library.Theme.Font,
             Text = name,
             TextColor3 = state and Library.Theme.TextColor or Library.Theme.TextMuted,
@@ -2591,7 +2591,7 @@ ThemeMap = {BackgroundColor3 = "OutlineColor"}
 ThemeMap = {BackgroundColor3 = "MainColor"}
     })
 
-    function WindowObj:CreateTab(name)
+    function WindowObj:CreateTab(name, internal)
         local TabObj = {}
         
         local bounds = GetTextBounds(name, Library.Theme.Font, 12)
@@ -2603,6 +2603,7 @@ ThemeMap = {BackgroundColor3 = "MainColor"}
             BorderSizePixel = 0,
             Font = Library.Theme.Font,
             Text = "",
+            LayoutOrder = internal and 9999 or 0,
             ZIndex = 3
         })
 
@@ -2703,7 +2704,7 @@ ThemeMap = {TextColor3 = "TextMuted"}
             WindowObj.CurrentTab = TabObj
         end)
 
-        if #WindowObj.Tabs == 1 then
+        if not internal and WindowObj.CurrentTab == nil then
             TabContent.Visible = true
             TabText.TextColor3 = Library.Theme.TextColor
             TabBorder.Visible = true
@@ -3000,6 +3001,95 @@ ThemeMap = {BackgroundColor3 = "AccentColor"}
         end
         
         return TabObj
+    end
+
+    -- =================================================================
+    -- Custom cursor (own ScreenGui so it sits above every popup)
+    -- =================================================================
+    local CursorGui = Create("ScreenGui", {
+        Name = "LinoriaLiteCursor",
+        ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+        ResetOnSpawn = false,
+        IgnoreGuiInset = true,
+        DisplayOrder = 2147483647
+    })
+    pcall(function() CursorGui.Parent = CoreGui end)
+    if not CursorGui.Parent then CursorGui.Parent = LocalPlayer:WaitForChild("PlayerGui") end
+    Library.CursorGui = CursorGui
+    Library.CursorEnabled = true
+
+    local CursorRoot = Create("Frame", {
+        Parent = CursorGui, BackgroundTransparency = 1,
+        Size = UDim2.new(0, 0, 0, 0), ZIndex = 100000
+    })
+    -- Arrow built from rotated squares: black outline behind, accent fill in front.
+    local function ArrowPart(size, color, themeKey, z)
+        return Create("Frame", {
+            Parent = CursorRoot, BackgroundColor3 = color, BorderSizePixel = 0,
+            Size = UDim2.new(0, size, 0, size), Rotation = 45,
+            AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0, 0, 0, 0),
+            ZIndex = z, ThemeMap = themeKey and {BackgroundColor3 = themeKey} or nil
+        })
+    end
+    local CursorOutline = ArrowPart(12, Library.Theme.OutlineColor, "OutlineColor", 100000)
+    local CursorFill = ArrowPart(8, Library.Theme.AccentColor, "AccentColor", 100001)
+    local CursorDot = Create("Frame", {
+        Parent = CursorRoot, BackgroundColor3 = Library.Theme.TextColor, BorderSizePixel = 0,
+        Size = UDim2.new(0, 2, 0, 2), AnchorPoint = Vector2.new(0.5, 0.5),
+        ZIndex = 100002, ThemeMap = {BackgroundColor3 = "TextColor"}
+    })
+
+    local prevIcon = UserInputService.MouseIconEnabled
+    local function RefreshCursor()
+        local show = Library.CursorEnabled and MainFrame.Visible
+        CursorRoot.Visible = show
+        UserInputService.MouseIconEnabled = show and false or prevIcon
+    end
+    MainFrame:GetPropertyChangedSignal("Visible"):Connect(RefreshCursor)
+    table.insert(Library.Connections, RunService.RenderStepped:Connect(function()
+        if CursorRoot.Visible then
+            local m = UserInputService:GetMouseLocation()
+            CursorRoot.Position = UDim2.new(0, m.X, 0, m.Y)
+        end
+    end))
+    table.insert(Library.Connections, { Connected = true, Disconnect = function(self)
+        self.Connected = false
+        UserInputService.MouseIconEnabled = prevIcon
+        if CursorGui then CursorGui:Destroy() end
+    end })
+    function WindowObj:SetCursorEnabled(v) Library.CursorEnabled = v and true or false; RefreshCursor() end
+    RefreshCursor()
+
+    -- =================================================================
+    -- Built-in Settings tab (always last)
+    -- =================================================================
+    do
+        local SettingsTab = WindowObj:CreateTab("Settings", true)
+        local UIGroup = SettingsTab:CreateGroupBox("Left", "Interface")
+
+        UIGroup:AddToggle("Custom Cursor", true, function(v) WindowObj:SetCursorEnabled(v) end, "__CustomCursor")
+        UIGroup:AddColorPicker("Accent Color", Library.Theme.AccentColor, function(c)
+            Library:UpdateTheme("AccentColor", c)
+        end, "__AccentColor")
+        local MenuBind = UIGroup:AddKeybind("Menu Key", Enum.KeyCode.RightShift, nil, "__MenuKey")
+        TrackInput(UserInputService.InputBegan, function(input, processed)
+            if processed or input.UserInputType ~= Enum.UserInputType.Keyboard then return end
+            if input.KeyCode.Name == Library.Options.__MenuKey.Value then
+                MainFrame.Visible = not MainFrame.Visible
+            end
+        end)
+        UIGroup:AddSlider("Menu Width", 400, 900, Size.X.Offset, function(v)
+            MainFrame.Size = UDim2.new(0, v, 0, MainFrame.Size.Y.Offset)
+        end, "__MenuWidth")
+        UIGroup:AddSlider("Menu Height", 300, 800, Size.Y.Offset, function(v)
+            MainFrame.Size = UDim2.new(0, MainFrame.Size.X.Offset, 0, v)
+        end, "__MenuHeight")
+
+        local MiscGroup = SettingsTab:CreateGroupBox("Right", "Misc")
+        MiscGroup:AddInput("Watermark Text", "", function(t) WindowObj:SetWatermark(t) end, "__Watermark")
+        MiscGroup:AddButton("Test Notification", function() WindowObj:Notify("Settings are working!", 3) end)
+        MiscGroup:AddDivider()
+        MiscGroup:AddButton("Unload UI", function() Library:Unload() end)
     end
 
     return WindowObj
