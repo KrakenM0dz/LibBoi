@@ -92,6 +92,49 @@ local function Create(className, properties)
     return instance
 end
 
+-- =====================================================================
+-- Protection: keep the UI out of reach of game scripts
+-- =====================================================================
+-- Parents a ScreenGui to the safest container the executor offers
+-- (gethui > protect_gui + CoreGui > CoreGui > PlayerGui), gives it a random
+-- name so name-based scans miss it, and flags it so it survives respawns.
+Library.Protect = {
+    RandomName = true,   -- random GUI names instead of "LinoriaLiteGui"
+    UseHui = true,       -- prefer gethui() when available
+}
+
+local function RandomString(n)
+    local t = table.create(n)
+    for i = 1, n do
+        local r = math.random(1, 3)
+        t[i] = string.char(r == 1 and math.random(48, 57) or r == 2 and math.random(65, 90) or math.random(97, 122))
+    end
+    return table.concat(t)
+end
+
+local function ProtectGui(gui)
+    if Library.Protect.RandomName then gui.Name = RandomString(math.random(10, 20)) end
+    local env = getgenv and getgenv() or _G
+    local parent
+    if Library.Protect.UseHui then
+        local f = env.gethui or gethui
+        if f then
+            local ok, h = pcall(f)
+            if ok and typeof(h) == "Instance" then parent = h end
+        end
+    end
+    if not parent then
+        local prot = (env.syn and env.syn.protect_gui) or env.protect_gui or env.protectgui
+        if prot then pcall(prot, gui) end
+        if pcall(function() gui.Parent = CoreGui end) and gui.Parent then return end
+    end
+    if parent then
+        gui.Parent = parent
+    else
+        gui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+    end
+end
+
 local function GetTextBounds(text, font, size)
     return TextService:GetTextSize(tostring(text or ""), size, font, Vector2.new(9999, 9999))
 end
@@ -2277,10 +2320,7 @@ function Library:CreateWindow(options)
     Library.ScreenGui = ScreenGui
     WindowObj.ScreenGui = ScreenGui
     
-    local success = pcall(function() ScreenGui.Parent = CoreGui end)
-    if not success then
-        ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
-    end
+    ProtectGui(ScreenGui)
 
     local TooltipOutline = Create("Frame", {
         Parent = ScreenGui,
@@ -3013,8 +3053,7 @@ ThemeMap = {BackgroundColor3 = "AccentColor"}
         IgnoreGuiInset = true,
         DisplayOrder = 2147483647
     })
-    pcall(function() CursorGui.Parent = CoreGui end)
-    if not CursorGui.Parent then CursorGui.Parent = LocalPlayer:WaitForChild("PlayerGui") end
+    ProtectGui(CursorGui)
     Library.CursorGui = CursorGui
     Library.CursorEnabled = true
 
@@ -3022,22 +3061,50 @@ ThemeMap = {BackgroundColor3 = "AccentColor"}
         Parent = CursorGui, BackgroundTransparency = 1,
         Size = UDim2.new(0, 0, 0, 0), ZIndex = 100000
     })
-    -- Arrow built from rotated squares: black outline behind, accent fill in front.
-    local function ArrowPart(size, color, themeKey, z)
-        return Create("Frame", {
+    -- Pixel-art pointer: one frame per row, black outline behind accent fill,
+    -- plus a soft drop shadow. Hotspot is the tip at (0,0).
+    local ArrowRows = {}   -- {x0, x1} per row (inclusive)
+    for y = 0, 11 do ArrowRows[#ArrowRows + 1] = {0, math.min(y, 8)} end   -- head
+    for y = 12, 14 do ArrowRows[#ArrowRows + 1] = {0, 8 - (y - 11) * 2 + 1} end -- waist
+    for k = 0, 4 do ArrowRows[#ArrowRows + 1] = {2 + math.floor(k / 2), 4 + math.floor(k / 2)} end -- tail
+
+    local CursorFills = {}
+    local function Row(x0, y, w, h, color, z, themeKey, ox)
+        local f = Create("Frame", {
             Parent = CursorRoot, BackgroundColor3 = color, BorderSizePixel = 0,
-            Size = UDim2.new(0, size, 0, size), Rotation = 45,
-            AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0, 0, 0, 0),
-            ZIndex = z, ThemeMap = themeKey and {BackgroundColor3 = themeKey} or nil
+            Position = UDim2.new(0, x0 + (ox or 0), 0, y + (ox or 0)),
+            Size = UDim2.new(0, w, 0, h), ZIndex = z,
+            ThemeMap = themeKey and {BackgroundColor3 = themeKey} or nil
         })
+        return f
     end
-    local CursorOutline = ArrowPart(12, Library.Theme.OutlineColor, "OutlineColor", 100000)
-    local CursorFill = ArrowPart(8, Library.Theme.AccentColor, "AccentColor", 100001)
-    local CursorDot = Create("Frame", {
-        Parent = CursorRoot, BackgroundColor3 = Library.Theme.TextColor, BorderSizePixel = 0,
-        Size = UDim2.new(0, 2, 0, 2), AnchorPoint = Vector2.new(0.5, 0.5),
-        ZIndex = 100002, ThemeMap = {BackgroundColor3 = "TextColor"}
-    })
+    for r, span in ipairs(ArrowRows) do
+        local y, w = r - 1, span[2] - span[1] + 1
+        local sh = Row(span[1] - 1, y - 1, w + 2, 3, Color3.new(0, 0, 0), 100000)
+        sh.BackgroundTransparency = 0.65
+        sh.Position = UDim2.new(0, span[1] + 1, 0, y + 1)         -- drop shadow
+        Row(span[1] - 1, y - 1, w + 2, 3, Library.Theme.OutlineColor, 100001, "OutlineColor")
+        CursorFills[#CursorFills + 1] = Row(span[1], y, w, 1, Library.Theme.AccentColor, 100002, "AccentColor")
+        -- white highlight along the left edge for a bit of depth
+        local hl = Row(span[1], y, 1, 1, Color3.new(1, 1, 1), 100003)
+        hl.BackgroundTransparency = 0.5
+    end
+    table.insert(Library.Connections, UserInputService.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            for _, f in ipairs(CursorFills) do
+                Library.ThemeObjects[f] = nil
+                f.BackgroundColor3 = Library.Theme.TextColor
+            end
+        end
+    end))
+    table.insert(Library.Connections, UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            for _, f in ipairs(CursorFills) do
+                Library.ThemeObjects[f] = {BackgroundColor3 = "AccentColor"}
+                f.BackgroundColor3 = Library.Theme.AccentColor
+            end
+        end
+    end))
 
     local prevIcon = UserInputService.MouseIconEnabled
     local function RefreshCursor()
