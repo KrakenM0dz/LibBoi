@@ -3061,67 +3061,75 @@ ThemeMap = {BackgroundColor3 = "AccentColor"}
         Parent = CursorGui, BackgroundTransparency = 1,
         Size = UDim2.new(0, 0, 0, 0), ZIndex = 100000
     })
-    -- Pixel-art pointer: one frame per row, black outline behind accent fill,
-    -- plus a soft drop shadow. Hotspot is the tip at (0,0).
-    local ArrowRows = {}   -- {x0, x1} per row (inclusive)
-    for y = 0, 11 do ArrowRows[#ArrowRows + 1] = {0, math.min(y, 8)} end   -- head
-    for y = 12, 14 do ArrowRows[#ArrowRows + 1] = {0, 8 - (y - 11) * 2 + 1} end -- waist
-    for k = 0, 4 do ArrowRows[#ArrowRows + 1] = {2 + math.floor(k / 2), 4 + math.floor(k / 2)} end -- tail
-
-    local CursorFills = {}
-    local function Row(x0, y, w, h, color, z, themeKey, ox)
+    -- Ring + dot reticle built from UICorner/UIStroke so edges are anti-aliased.
+    local function Circle(size, parent, z)
         local f = Create("Frame", {
-            Parent = CursorRoot, BackgroundColor3 = color, BorderSizePixel = 0,
-            Position = UDim2.new(0, x0 + (ox or 0), 0, y + (ox or 0)),
-            Size = UDim2.new(0, w, 0, h), ZIndex = z,
-            ThemeMap = themeKey and {BackgroundColor3 = themeKey} or nil
+            Parent = parent, BackgroundTransparency = 1, BorderSizePixel = 0,
+            AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0, 0, 0, 0),
+            Size = UDim2.new(0, size, 0, size), ZIndex = z
         })
+        Create("UICorner", {Parent = f, CornerRadius = UDim.new(1, 0)})
         return f
     end
-    for r, span in ipairs(ArrowRows) do
-        local y, w = r - 1, span[2] - span[1] + 1
-        local sh = Row(span[1] - 1, y - 1, w + 2, 3, Color3.new(0, 0, 0), 100000)
-        sh.BackgroundTransparency = 0.65
-        sh.Position = UDim2.new(0, span[1] + 1, 0, y + 1)         -- drop shadow
-        Row(span[1] - 1, y - 1, w + 2, 3, Library.Theme.OutlineColor, 100001, "OutlineColor")
-        CursorFills[#CursorFills + 1] = Row(span[1], y, w, 1, Library.Theme.AccentColor, 100002, "AccentColor")
-        -- white highlight along the left edge for a bit of depth
-        local hl = Row(span[1], y, 1, 1, Color3.new(1, 1, 1), 100003)
-        hl.BackgroundTransparency = 0.5
+    local function Stroke(parent, thickness, color, themeKey, transparency)
+        return Create("UIStroke", {
+            Parent = parent, Thickness = thickness, Color = color,
+            Transparency = transparency or 0, ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+            ThemeMap = themeKey and {Color = themeKey} or nil
+        })
+    end
+    local Shadow = Circle(20, CursorRoot, 100000)
+    Stroke(Shadow, 1, Color3.new(0, 0, 0), nil, 0.35)
+    local Ring = Circle(16, CursorRoot, 100001)
+    Stroke(Ring, 2, Library.Theme.AccentColor, "AccentColor")
+    local DotShadow = Circle(8, CursorRoot, 100001)
+    DotShadow.BackgroundTransparency = 0; DotShadow.BackgroundColor3 = Color3.new(0, 0, 0)
+    local Dot = Circle(4, CursorRoot, 100002)
+    Dot.BackgroundTransparency = 0
+    Dot.BackgroundColor3 = Library.Theme.AccentColor
+    Library.ThemeObjects[Dot] = {BackgroundColor3 = "AccentColor"}
+
+    local function TweenSizes(ring, shadow)
+        TweenService:Create(Ring, TweenInfo.new(0.08), {Size = UDim2.new(0, ring, 0, ring)}):Play()
+        TweenService:Create(Shadow, TweenInfo.new(0.08), {Size = UDim2.new(0, shadow, 0, shadow)}):Play()
     end
     table.insert(Library.Connections, UserInputService.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            for _, f in ipairs(CursorFills) do
-                Library.ThemeObjects[f] = nil
-                f.BackgroundColor3 = Library.Theme.TextColor
-            end
-        end
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then TweenSizes(10, 14) end
     end))
     table.insert(Library.Connections, UserInputService.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            for _, f in ipairs(CursorFills) do
-                Library.ThemeObjects[f] = {BackgroundColor3 = "AccentColor"}
-                f.BackgroundColor3 = Library.Theme.AccentColor
-            end
-        end
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then TweenSizes(16, 20) end
     end))
 
-    local prevIcon = UserInputService.MouseIconEnabled
-    local function RefreshCursor()
-        local show = Library.CursorEnabled and MainFrame.Visible
-        CursorRoot.Visible = show
-        UserInputService.MouseIconEnabled = show and false or prevIcon
+    -- The UI counts as open only while the menu frame AND its ScreenGui are shown
+    -- (scripts may hide it via ScreenGui.Enabled). While open the real cursor is
+    -- forced off every frame (games re-enable it); on close the game's own
+    -- MouseIconEnabled value, captured when the menu opened, is put back.
+    local savedIcon = UserInputService.MouseIconEnabled
+    local cursorActive = false
+    local function UIOpen()
+        return Library.CursorEnabled and ScreenGui.Parent ~= nil
+            and ScreenGui.Enabled and MainFrame.Visible
     end
-    MainFrame:GetPropertyChangedSignal("Visible"):Connect(RefreshCursor)
-    table.insert(Library.Connections, RunService.RenderStepped:Connect(function()
-        if CursorRoot.Visible then
+    local function RefreshCursor()
+        local open = UIOpen()
+        if open and not cursorActive then
+            savedIcon = UserInputService.MouseIconEnabled
+            cursorActive = true
+        elseif not open and cursorActive then
+            cursorActive = false
+            UserInputService.MouseIconEnabled = savedIcon
+        end
+        CursorRoot.Visible = open
+        if open then
+            UserInputService.MouseIconEnabled = false
             local m = UserInputService:GetMouseLocation()
             CursorRoot.Position = UDim2.new(0, m.X, 0, m.Y)
         end
-    end))
+    end
+    table.insert(Library.Connections, RunService.RenderStepped:Connect(RefreshCursor))
     table.insert(Library.Connections, { Connected = true, Disconnect = function(self)
         self.Connected = false
-        UserInputService.MouseIconEnabled = prevIcon
+        if cursorActive then UserInputService.MouseIconEnabled = savedIcon end
         if CursorGui then CursorGui:Destroy() end
     end })
     function WindowObj:SetCursorEnabled(v) Library.CursorEnabled = v and true or false; RefreshCursor() end
