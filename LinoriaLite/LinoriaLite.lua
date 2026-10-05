@@ -21,10 +21,15 @@ function Library:Unload()
     table.clear(Library.Connections)
     table.clear(Library.ThemeObjects)
     table.clear(Library.Options)
+    Library.Window, Library.SettingsTab, Library.SettingsMenuGroup = nil, nil, nil
     if Library.ScreenGui then
         Library.ScreenGui:Destroy()
         Library.ScreenGui = nil
     end
+end
+
+function Library:Notify(text, duration)
+    if Library.Window then Library.Window:Notify(text, duration) end
 end
 
 -- Every global input hook goes through here so Unload() can drop all of them.
@@ -1367,6 +1372,23 @@ ThemeMap = {TextColor3 = "TextColor", PlaceholderColor3 = "TextMuted"}
         
         local value = default
 
+        -- Decimal places follow the numbers given: 0-0.4 with default 0.1 steps
+        -- by 0.01, whole-number sliders keep stepping by 1. Capped at 3.
+        local decimals = 0
+        for _, n in ipairs({min, max, default}) do
+            local str = string.format("%.3f", n):gsub("0+$", "")
+            local frac = str:match("%.(%d*)$")
+            if frac and #frac > decimals then decimals = #frac end
+        end
+        -- A sub-1 range with whole-number bounds (eg 0..1) still wants fine steps.
+        if decimals == 0 and (max - min) <= 1 then decimals = 2 end
+        local mult = 10 ^ decimals
+        local function Fmt(n)
+            local str = string.format("%." .. decimals .. "f", n)
+            if decimals > 0 then str = str:gsub("0+$", ""):gsub("%.$", "") end
+            return str
+        end
+
         local SliderFrame = Create("Frame", {
             Name = name.."_Slider",
             Parent = ElementContainer,
@@ -1434,7 +1456,7 @@ ThemeMap = {BackgroundColor3 = "AccentColor"}
             BackgroundTransparency = 1,
             Size = UDim2.new(1, 0, 1, 0),
             Font = Library.Theme.Font,
-            Text = tostring(value) .. "/" .. tostring(max),
+            Text = Fmt(value) .. "/" .. Fmt(max),
             TextColor3 = Library.Theme.TextColor,
             TextSize = 12,
             ZIndex = 4,
@@ -1449,7 +1471,7 @@ ThemeMap = {Color = "OutlineColor"}
 
         local function UpdateSlider(val, instant)
             value = math.clamp(tonumber(val) or min, min, max)
-            value = math.floor(value + 0.5)   -- nearest, not always-down
+            value = math.floor(value * mult + 0.5) / mult   -- nearest step
             -- max == min would divide by zero and leave the fill at nan.
             local percent = (max > min) and ((value - min) / (max - min)) or 0
             if instant then
@@ -1457,7 +1479,7 @@ ThemeMap = {Color = "OutlineColor"}
             else
                 TweenService:Create(SliderFill, TweenInfo.new(0.05), {Size = UDim2.new(percent, 0, 1, 0)}):Play()
             end
-            ValueLabel.Text = tostring(value) .. "/" .. tostring(max)
+            ValueLabel.Text = Fmt(value) .. "/" .. Fmt(max)
             if Library.Options[idx] then Library.Options[idx].Value = value end
             callback(value)
         end
@@ -2233,6 +2255,7 @@ ThemeMap = {TextColor3 = "TextMuted"}
 
         local obj = {
             Type = "Keybind",
+            Name = name,
             Value = key.Name,
             Save = function(self) return self.Value end,
             Load = function(self, val)
@@ -2465,7 +2488,7 @@ ThemeMap = {TextColor3 = "TextColor"}
     })
     
     function WindowObj:Notify(text, duration)
-        duration = duration or 3
+        duration = duration or Library.NotifyDuration or 3
         
         local NotifOutline = Create("Frame", {
             Parent = NotificationContainer,
@@ -2632,7 +2655,12 @@ ThemeMap = {BackgroundColor3 = "MainColor"}
     })
 
     function WindowObj:CreateTab(name, internal)
+        -- A script asking for its own "Settings" tab gets the built-in one.
+        if not internal and Library.SettingsTab and tostring(name):lower() == "settings" then
+            return Library.SettingsTab
+        end
         local TabObj = {}
+        local groupCount = 0
         
         local bounds = GetTextBounds(name, Library.Theme.Font, 12)
         local TabButton = Create("TextButton", {
@@ -2727,7 +2755,8 @@ ThemeMap = {TextColor3 = "TextMuted"}
             Button = TabButton, 
             Content = TabContent,
             Border = TabBorder,
-            Label = TabText
+            Label = TabText,
+            Obj = TabObj
         })
 
         TabButton.MouseButton1Click:Connect(function()
@@ -2752,6 +2781,39 @@ ThemeMap = {TextColor3 = "TextMuted"}
         end
 
         function TabObj:CreateGroupBox(side, groupName)
+            -- Menu / Themes / Configuration always belong in the built-in
+            -- Settings tab, whichever tab a script asked to put them on.
+            if not internal and Library.SettingsTab and Library.SettingsTab ~= TabObj then
+                local n = tostring(groupName):lower()
+                local target
+                if n == "menu" then target = Library.SettingsMenuGroup
+                elseif n == "themes" or n == "configuration" or n == "config" then
+                    target = Library.SettingsTab:CreateGroupBox(n == "themes" and "Left" or "Right",
+                        n == "config" and "Configuration" or groupName)
+                end
+                if target then
+                    -- Hide this tab if nothing is left on it.
+                    task.defer(function()
+                        if groupCount == 0 and TabButton.Parent then
+                            TabButton.Visible = false
+                            TabContent.Visible = false
+                            if WindowObj.CurrentTab == TabObj then
+                                for _, t in ipairs(WindowObj.Tabs) do
+                                    if t.Button.Visible and t.Button ~= TabButton then
+                                        t.Content.Visible = true
+                                        t.Label.TextColor3 = Library.Theme.TextColor
+                                        t.Border.Visible = true
+                                        WindowObj.CurrentTab = t.Obj
+                                        break
+                                    end
+                                end
+                            end
+                        end
+                    end)
+                    return target
+                end
+            end
+            groupCount = groupCount + 1
             local GroupObj = {}
             local ParentCol = side == "Left" and LeftCol or RightCol
             
@@ -3061,44 +3123,146 @@ ThemeMap = {BackgroundColor3 = "AccentColor"}
         Parent = CursorGui, BackgroundTransparency = 1,
         Size = UDim2.new(0, 0, 0, 0), ZIndex = 100000
     })
-    -- Ring + dot reticle built from UICorner/UIStroke so edges are anti-aliased.
-    local function Circle(size, parent, z)
+    -- =================================================================
+    -- Cursor styles. Everything is Frames + UICorner/UIStroke (anti-aliased,
+    -- no assets). Library.Cursor holds the live settings; the Settings tab
+    -- edits it and UpdateCursor() applies it every frame.
+    -- =================================================================
+    local Cur = {
+        Style = "Ring", Size = 16, Color = Color3.fromRGB(255, 255, 255),
+        UseAccent = true, Rainbow = false, Trail = false, Spin = false,
+    }
+    Library.Cursor = Cur
+    local BLACK = Color3.new(0, 0, 0)
+
+    local function Box(parent, z, round)
         local f = Create("Frame", {
             Parent = parent, BackgroundTransparency = 1, BorderSizePixel = 0,
-            AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0, 0, 0, 0),
-            Size = UDim2.new(0, size, 0, size), ZIndex = z
+            AnchorPoint = Vector2.new(0.5, 0.5), Size = UDim2.new(0, 0, 0, 0), ZIndex = z
         })
-        Create("UICorner", {Parent = f, CornerRadius = UDim.new(1, 0)})
+        if round then Create("UICorner", {Parent = f, CornerRadius = UDim.new(1, 0)}) end
         return f
     end
-    local function Stroke(parent, thickness, color, themeKey, transparency)
+    local function Outline(f, thickness, color, transparency)
         return Create("UIStroke", {
-            Parent = parent, Thickness = thickness, Color = color,
-            Transparency = transparency or 0, ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
-            ThemeMap = themeKey and {Color = themeKey} or nil
+            Parent = f, Thickness = thickness, Color = color or BLACK,
+            Transparency = transparency or 0, ApplyStrokeMode = Enum.ApplyStrokeMode.Border
         })
     end
-    local Shadow = Circle(20, CursorRoot, 100000)
-    Stroke(Shadow, 1, Color3.new(0, 0, 0), nil, 0.35)
-    local Ring = Circle(16, CursorRoot, 100001)
-    Stroke(Ring, 2, Library.Theme.AccentColor, "AccentColor")
-    local DotShadow = Circle(8, CursorRoot, 100001)
-    DotShadow.BackgroundTransparency = 0; DotShadow.BackgroundColor3 = Color3.new(0, 0, 0)
-    local Dot = Circle(4, CursorRoot, 100002)
-    Dot.BackgroundTransparency = 0
-    Dot.BackgroundColor3 = Library.Theme.AccentColor
-    Library.ThemeObjects[Dot] = {BackgroundColor3 = "AccentColor"}
-
-    local function TweenSizes(ring, shadow)
-        TweenService:Create(Ring, TweenInfo.new(0.08), {Size = UDim2.new(0, ring, 0, ring)}):Play()
-        TweenService:Create(Shadow, TweenInfo.new(0.08), {Size = UDim2.new(0, shadow, 0, shadow)}):Play()
+    local function Container(name)
+        return Create("Frame", {
+            Name = name, Parent = CursorRoot, BackgroundTransparency = 1,
+            Size = UDim2.new(0, 0, 0, 0), Visible = false
+        })
     end
+
+    -- Ring: halo + coloured ring + centre dot
+    local RingC = Container("Ring")
+    local RingHalo = Box(RingC, 100000, true);  Outline(RingHalo, 1, BLACK, 0.35)
+    local RingRing = Box(RingC, 100001, true);  local RingStroke = Outline(RingRing, 2, Color3.new(1, 1, 1))
+    local RingDotBg = Box(RingC, 100001, true); RingDotBg.BackgroundTransparency = 0; RingDotBg.BackgroundColor3 = BLACK
+    local RingDot = Box(RingC, 100002, true);   RingDot.BackgroundTransparency = 0
+
+    -- Crosshair: 4 arms with dark outline arms behind
+    local CrossC = Container("Crosshair")
+    local Arms, ArmsBack = {}, {}
+    for n = 1, 4 do
+        ArmsBack[n] = Box(CrossC, 100000); ArmsBack[n].BackgroundTransparency = 0.35; ArmsBack[n].BackgroundColor3 = BLACK
+        Arms[n] = Box(CrossC, 100001);     Arms[n].BackgroundTransparency = 0
+    end
+    local CrossDot = Box(CrossC, 100002, true); CrossDot.BackgroundTransparency = 0
+
+    -- Dot: solid disc with dark rim
+    local DotC = Container("Dot")
+    local DotDisc = Box(DotC, 100001, true); DotDisc.BackgroundTransparency = 0
+    Outline(DotDisc, 1.5, BLACK, 0.1)
+
+    -- Diamond: rotated square outline + centre dot
+    local DiaC = Container("Diamond")
+    local DiaHalo = Box(DiaC, 100000); DiaHalo.Rotation = 45; Outline(DiaHalo, 1, BLACK, 0.35)
+    local DiaSq = Box(DiaC, 100001);   DiaSq.Rotation = 45; local DiaStroke = Outline(DiaSq, 2, Color3.new(1, 1, 1))
+    local DiaDot = Box(DiaC, 100002, true); DiaDot.BackgroundTransparency = 0
+
+    local Containers = {Ring = RingC, Crosshair = CrossC, Dot = DotC, Diamond = DiaC}
+    Library.CursorStyles = {"Ring", "Crosshair", "Dot", "Diamond"}
+
+    -- Fading trail, parented to the cursor GUI in screen space.
+    local TRAIL_N = 10
+    local Trail, History = {}, {}
+    for n = 1, TRAIL_N do
+        local t = Box(CursorGui, 99990, true)
+        t.BackgroundColor3 = Color3.new(1, 1, 1); t.Visible = false
+        Trail[n] = t
+    end
+
+    local pressScale, angle, mouseDown = 1, 0, false
     table.insert(Library.Connections, UserInputService.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then TweenSizes(10, 14) end
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then mouseDown = true end
     end))
     table.insert(Library.Connections, UserInputService.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then TweenSizes(16, 20) end
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then mouseDown = false end
     end))
+
+    local function SetSize(f, w, h) f.Size = UDim2.new(0, w, 0, h or w) end
+
+    local function UpdateCursor(dt, mouse)
+        local color
+        if Cur.Rainbow then color = Color3.fromHSV((os.clock() * 0.35) % 1, 0.75, 1)
+        elseif Cur.UseAccent then color = Library.Theme.AccentColor
+        else color = Cur.Color end
+
+        pressScale = pressScale + ((mouseDown and 0.65 or 1) - pressScale) * math.min(1, dt * 22)
+        local sz = Cur.Size * pressScale
+        if Cur.Spin then angle = (angle + dt * 160) % 360 else angle = 0 end
+
+        for name, c in pairs(Containers) do c.Visible = (name == Cur.Style) end
+
+        if Cur.Style == "Ring" then
+            SetSize(RingHalo, sz + 4); SetSize(RingRing, sz); SetSize(RingDotBg, 8); SetSize(RingDot, 4)
+            RingStroke.Color = color; RingDot.BackgroundColor3 = color
+            RingC.Rotation = angle
+        elseif Cur.Style == "Crosshair" then
+            local len, gap, th = math.max(3, sz * 0.45), math.max(2, sz * 0.2), 2
+            local dirs = {{0, -1}, {1, 0}, {0, 1}, {-1, 0}}
+            for n, d in ipairs(dirs) do
+                local off = gap + len / 2
+                local w = d[1] ~= 0 and len or th
+                local h = d[2] ~= 0 and len or th
+                Arms[n].Size = UDim2.new(0, w, 0, h)
+                Arms[n].BackgroundColor3 = color
+                Arms[n].Position = UDim2.new(0, d[1] * off, 0, d[2] * off)
+                ArmsBack[n].Size = UDim2.new(0, w + 2, 0, h + 2)
+                ArmsBack[n].Position = Arms[n].Position
+            end
+            SetSize(CrossDot, 2); CrossDot.BackgroundColor3 = color
+            CrossC.Rotation = angle
+        elseif Cur.Style == "Dot" then
+            SetSize(DotDisc, math.max(4, sz * 0.5)); DotDisc.BackgroundColor3 = color
+        else -- Diamond
+            SetSize(DiaHalo, sz * 0.8 + 4); SetSize(DiaSq, sz * 0.8); SetSize(DiaDot, 3)
+            DiaStroke.Color = color; DiaDot.BackgroundColor3 = color
+            DiaC.Rotation = angle
+        end
+
+        -- Trail
+        if Cur.Trail then
+            table.insert(History, 1, mouse)
+            if #History > TRAIL_N then table.remove(History) end
+            for n = 1, TRAIL_N do
+                local pos, t = History[n], Trail[n]
+                if pos then
+                    t.Visible = true
+                    t.Position = UDim2.new(0, pos.X, 0, pos.Y)
+                    SetSize(t, math.max(2, (Cur.Size * 0.4) * (1 - n / (TRAIL_N + 2))))
+                    t.BackgroundColor3 = color
+                    t.BackgroundTransparency = 0.35 + 0.6 * (n / TRAIL_N)
+                end
+            end
+        elseif #History > 0 then
+            table.clear(History)
+            for n = 1, TRAIL_N do Trail[n].Visible = false end
+        end
+    end
 
     -- The UI counts as open only while the menu frame AND its ScreenGui are shown
     -- (scripts may hide it via ScreenGui.Enabled). While open the real cursor is
@@ -3110,7 +3274,7 @@ ThemeMap = {BackgroundColor3 = "AccentColor"}
         return Library.CursorEnabled and ScreenGui.Parent ~= nil
             and ScreenGui.Enabled and MainFrame.Visible
     end
-    local function RefreshCursor()
+    local function RefreshCursor(dt)
         local open = UIOpen()
         if open and not cursorActive then
             savedIcon = UserInputService.MouseIconEnabled
@@ -3124,6 +3288,10 @@ ThemeMap = {BackgroundColor3 = "AccentColor"}
             UserInputService.MouseIconEnabled = false
             local m = UserInputService:GetMouseLocation()
             CursorRoot.Position = UDim2.new(0, m.X, 0, m.Y)
+            UpdateCursor(dt or 0.016, m)
+        else
+            for n = 1, TRAIL_N do Trail[n].Visible = false end
+            table.clear(History)
         end
     end
     table.insert(Library.Connections, RunService.RenderStepped:Connect(RefreshCursor))
@@ -3140,31 +3308,142 @@ ThemeMap = {BackgroundColor3 = "AccentColor"}
     -- =================================================================
     do
         local SettingsTab = WindowObj:CreateTab("Settings", true)
-        local UIGroup = SettingsTab:CreateGroupBox("Left", "Interface")
+        Library.Window = WindowObj
+        Library.SettingsTab = SettingsTab    -- ThemeManager/SaveManager build into this
 
-        UIGroup:AddToggle("Custom Cursor", true, function(v) WindowObj:SetCursorEnabled(v) end, "__CustomCursor")
-        UIGroup:AddColorPicker("Accent Color", Library.Theme.AccentColor, function(c)
-            Library:UpdateTheme("AccentColor", c)
-        end, "__AccentColor")
-        local MenuBind = UIGroup:AddKeybind("Menu Key", Enum.KeyCode.RightShift, nil, "__MenuKey")
+        local MenuGroup = SettingsTab:CreateGroupBox("Left", "Menu")
+        Library.SettingsMenuGroup = MenuGroup
+        MenuGroup:AddKeybind("Menu Toggle", Enum.KeyCode.End, nil, "__MenuKey")
         TrackInput(UserInputService.InputBegan, function(input, processed)
             if processed or input.UserInputType ~= Enum.UserInputType.Keyboard then return end
-            if input.KeyCode.Name == Library.Options.__MenuKey.Value then
-                MainFrame.Visible = not MainFrame.Visible
+            local bind = Library.Options.__MenuKey
+            if bind and input.KeyCode.Name == bind.Value then
+                ScreenGui.Enabled = not ScreenGui.Enabled
             end
         end)
-        UIGroup:AddSlider("Menu Width", 400, 900, Size.X.Offset, function(v)
+        MenuGroup:AddToggle("Custom Cursor", true, function(v) WindowObj:SetCursorEnabled(v) end, "__CustomCursor")
+        MenuGroup:AddToggle("Show Watermark", true, function(v)
+            WindowObj:SetWatermark(v and (Title .. " | Running") or "")
+        end, "__ShowWatermark")
+        MenuGroup:AddSlider("Menu Width", 400, 900, Size.X.Offset, function(v)
             MainFrame.Size = UDim2.new(0, v, 0, MainFrame.Size.Y.Offset)
         end, "__MenuWidth")
-        UIGroup:AddSlider("Menu Height", 300, 800, Size.Y.Offset, function(v)
+        MenuGroup:AddSlider("Menu Height", 300, 800, Size.Y.Offset, function(v)
             MainFrame.Size = UDim2.new(0, MainFrame.Size.X.Offset, 0, v)
         end, "__MenuHeight")
+        MenuGroup:AddButton("Unload script", function() Library:Unload() end)
 
-        local MiscGroup = SettingsTab:CreateGroupBox("Right", "Misc")
-        MiscGroup:AddInput("Watermark Text", "", function(t) WindowObj:SetWatermark(t) end, "__Watermark")
-        MiscGroup:AddButton("Test Notification", function() WindowObj:Notify("Settings are working!", 3) end)
-        MiscGroup:AddDivider()
-        MiscGroup:AddButton("Unload UI", function() Library:Unload() end)
+        -- Live list of keybinds that are currently on / held.
+        local KbOutline = Create("Frame", {
+            Parent = ScreenGui, BackgroundColor3 = Library.Theme.OutlineColor,
+            Position = UDim2.new(0, 15, 0, 45), Size = UDim2.new(0, 120, 0, 20),
+            BorderSizePixel = 0, Visible = false, ZIndex = 50,
+            ThemeMap = {BackgroundColor3 = "OutlineColor"}
+        })
+        local KbInline = Create("Frame", {
+            Parent = KbOutline, BackgroundColor3 = Library.Theme.InlineColor,
+            Position = UDim2.new(0, 1, 0, 1), Size = UDim2.new(1, -2, 1, -2),
+            BorderSizePixel = 0, ZIndex = 50, ThemeMap = {BackgroundColor3 = "InlineColor"}
+        })
+        local KbBg = Create("Frame", {
+            Parent = KbInline, BackgroundColor3 = Library.Theme.BackgroundColor,
+            Position = UDim2.new(0, 1, 0, 1), Size = UDim2.new(1, -2, 1, -2),
+            BorderSizePixel = 0, ZIndex = 50, ThemeMap = {BackgroundColor3 = "BackgroundColor"}
+        })
+        Create("Frame", {
+            Parent = KbBg, BackgroundColor3 = Library.Theme.AccentColor,
+            Size = UDim2.new(1, 0, 0, 1), BorderSizePixel = 0, ZIndex = 51,
+            ThemeMap = {BackgroundColor3 = "AccentColor"}
+        })
+        local KbText = Create("TextLabel", {
+            Parent = KbBg, BackgroundTransparency = 1, Position = UDim2.new(0, 6, 0, 3),
+            Size = UDim2.new(1, -12, 1, -3), Font = Library.Theme.Font, TextSize = 12,
+            TextColor3 = Library.Theme.TextColor, TextXAlignment = Enum.TextXAlignment.Left,
+            TextYAlignment = Enum.TextYAlignment.Top, Text = "", ZIndex = 52,
+            ThemeMap = {TextColor3 = "TextColor"}
+        })
+        local kbEnabled, kbTimer, kbLast = false, 0, ""
+        MenuGroup:AddToggle("Keybind List", false, function(v)
+            kbEnabled = v
+            if not v then KbOutline.Visible = false end
+        end, "__KeybindList")
+        TrackInput(RunService.Heartbeat, function(dt)
+            if not kbEnabled then return end
+            kbTimer = kbTimer + dt
+            if kbTimer < 0.1 then return end
+            kbTimer = 0
+            local lines = {"Keybinds"}
+            for idx, o in pairs(Library.Options) do
+                if o.Type == "Keybind" and o.Name and idx:sub(1, 2) ~= "__"
+                    and o.GetState and o:GetState() then
+                    lines[#lines + 1] = string.format("[%s] %s (%s)", tostring(o.Value), o.Name, o:GetMode())
+                end
+            end
+            local text = table.concat(lines, "\n")
+            if text == kbLast then return end
+            kbLast = text
+            KbText.Text = text
+            local bounds = GetTextBounds(text, Library.Theme.Font, 12)
+            KbOutline.Size = UDim2.new(0, math.max(110, bounds.X + 18), 0, bounds.Y + 10)
+            KbOutline.Visible = ScreenGui.Enabled and #lines > 1
+        end)
+
+        local AppGroup = SettingsTab:CreateGroupBox("Left", "Appearance")
+
+        -- UI scale (UIScale on the window; popups keep their own size)
+        local MainScale = Create("UIScale", {Parent = MainFrame, Scale = 1})
+        AppGroup:AddSlider("UI Scale", 0.7, 1.4, 1, function(v) MainScale.Scale = v end, "__UIScale")
+
+        -- Font: swaps every text element now, and new elements pick it up too.
+        local FontNames = {"Code", "Gotham", "SourceSans", "Arial", "RobotoMono", "Ubuntu", "Fantasy", "Bangers"}
+        AppGroup:AddDropdown("Font", FontNames, "Code", function(name)
+            local font = Enum.Font[name]
+            if not font then return end
+            Library.Theme.Font = font
+            for _, d in ipairs(ScreenGui:GetDescendants()) do
+                if d:IsA("TextLabel") or d:IsA("TextButton") or d:IsA("TextBox") then
+                    d.Font = font
+                end
+            end
+        end, "__UIFont")
+
+        -- Rainbow accent: cycles Theme.AccentColor (throttled; UpdateTheme walks the theme map).
+        local rainbowOn, rainbowSpeed, rainbowTimer = false, 0.25, 0
+        local preRainbow
+        AppGroup:AddToggle("Rainbow Accent", false, function(v)
+            if v and not rainbowOn then preRainbow = Library.Theme.AccentColor end
+            if not v and rainbowOn and preRainbow then Library:UpdateTheme("AccentColor", preRainbow) end
+            rainbowOn = v
+        end, "__RainbowAccent")
+        AppGroup:AddSlider("Rainbow Speed", 0.05, 1, rainbowSpeed, function(v) rainbowSpeed = v end, "__RainbowSpeed")
+        TrackInput(RunService.Heartbeat, function(dt)
+            if not rainbowOn then return end
+            rainbowTimer = rainbowTimer + dt
+            if rainbowTimer < 1 / 20 then return end
+            rainbowTimer = 0
+            Library:UpdateTheme("AccentColor", Color3.fromHSV((os.clock() * rainbowSpeed) % 1, 0.8, 1))
+        end)
+
+        -- Notifications
+        AppGroup:AddDropdown("Notify Position", {"Bottom Right", "Bottom Left", "Top Right", "Top Left"}, "Bottom Right", function(v)
+            local top = v:find("Top") ~= nil
+            local left = v:find("Left") ~= nil
+            NotificationContainer.AnchorPoint = Vector2.new(left and 0 or 1, top and 0 or 1)
+            NotificationContainer.Position = UDim2.new(left and 0 or 1, left and 15 or -15, top and 0 or 1, top and 15 or -15)
+            NotifLayout.VerticalAlignment = top and Enum.VerticalAlignment.Top or Enum.VerticalAlignment.Bottom
+        end, "__NotifyPosition")
+        AppGroup:AddSlider("Notify Duration", 1, 10, 3, function(v) Library.NotifyDuration = v end, "__NotifyDuration")
+        AppGroup:AddButton("Test Notification", function() WindowObj:Notify("Notification test", Library.NotifyDuration) end)
+
+        local CursorGroup = SettingsTab:CreateGroupBox("Right", "Cursor")
+        local CurCfg = Library.Cursor
+        CursorGroup:AddDropdown("Cursor Style", Library.CursorStyles, CurCfg.Style, function(v) CurCfg.Style = v end, "__CursorStyle")
+        CursorGroup:AddSlider("Cursor Size", 6, 40, CurCfg.Size, function(v) CurCfg.Size = v end, "__CursorSize")
+        CursorGroup:AddToggle("Use Accent Color", true, function(v) CurCfg.UseAccent = v end, "__CursorAccent")
+        CursorGroup:AddColorPicker("Cursor Color", CurCfg.Color, function(c) CurCfg.Color = c end, "__CursorColor")
+        CursorGroup:AddToggle("Rainbow", false, function(v) CurCfg.Rainbow = v end, "__CursorRainbow")
+        CursorGroup:AddToggle("Spin", false, function(v) CurCfg.Spin = v end, "__CursorSpin")
+        CursorGroup:AddToggle("Trail", false, function(v) CurCfg.Trail = v end, "__CursorTrail")
     end
 
     return WindowObj
