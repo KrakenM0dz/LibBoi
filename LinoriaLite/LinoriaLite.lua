@@ -11,8 +11,31 @@ local Library = {}
 Library.Connections = {}
 Library.Options = {}
 Library.ThemeObjects = {}
+Library.Keybinds = {}    -- every bound key, standalone or attached to a toggle (feeds the keybind list)
+Library.Buttons = {}     -- name -> callback, so Library:Press(name) can click it
+
+-- Scripts can register cleanup (restore WalkSpeed, destroy ESP, stop loops...)
+-- that runs when the UI unloads, after every toggle has been switched off.
+Library.UnloadCallbacks = {}
+function Library:OnUnload(fn)
+    if type(fn) == "function" then table.insert(Library.UnloadCallbacks, fn) end
+end
 
 function Library:Unload()
+    if Library.Unloading then return end
+    Library.Unloading = true
+
+    -- Switch every toggle off first. SetValue runs the toggle's callback, so a
+    -- hub's features (loops, ESP, aimbot...) stop instead of outliving the UI.
+    -- The library's own "__" settings are skipped; they die with the GUI.
+    for idx, obj in pairs(Library.Options) do
+        if obj.Type == "Toggle" and tostring(idx):sub(1, 2) ~= "__" and obj.Value then
+            pcall(function() obj:SetValue(false) end)
+        end
+    end
+    for _, fn in ipairs(Library.UnloadCallbacks) do pcall(fn) end
+    table.clear(Library.UnloadCallbacks)
+
     for _, connection in ipairs(Library.Connections) do
         if connection.Connected then
             connection:Disconnect()
@@ -21,11 +44,14 @@ function Library:Unload()
     table.clear(Library.Connections)
     table.clear(Library.ThemeObjects)
     table.clear(Library.Options)
+    table.clear(Library.Buttons)
+    table.clear(Library.Keybinds)
     Library.Window, Library.SettingsTab, Library.SettingsMenuGroup = nil, nil, nil
     if Library.ScreenGui then
         Library.ScreenGui:Destroy()
         Library.ScreenGui = nil
     end
+    Library.Unloading = false
 end
 
 function Library:Notify(text, duration)
@@ -1153,6 +1179,12 @@ ThemeMap = {TextColor3 = "TextMuted"}
                 GetKey = function() return key end,
                 GetMode = function() return mode end
             }
+            Library.Keybinds[idx .. "_bind"] = {
+                Name = name,
+                GetKey = function() return key end,
+                GetMode = function() return mode end,
+                IsActive = function() return state and key ~= Enum.KeyCode.Unknown end,
+            }
             return BindObj
         end
 
@@ -1256,8 +1288,10 @@ ThemeMap = {TextColor3 = "TextColor"}
         Button.MouseButton1Up:Connect(function() TweenService:Create(BtnBg, TweenInfo.new(0.1), {BackgroundColor3 = Library.Theme.GroupBoxColor}):Play() end)
         Button.MouseLeave:Connect(function() TweenService:Create(BtnBg, TweenInfo.new(0.1), {BackgroundColor3 = Library.Theme.GroupBoxColor}):Play() end)
         Button.MouseButton1Click:Connect(callback)
-        
+        Library.Buttons[name] = callback
+
         return {
+            Press = function(self) callback() end,
             AddTooltip = function(self, text)
                 if not text or text == "" then return end
                 Button.MouseEnter:Connect(function() WindowObj.ShowTooltip(text) end)
@@ -1382,6 +1416,10 @@ ThemeMap = {TextColor3 = "TextColor", PlaceholderColor3 = "TextMuted"}
         end
         -- A sub-1 range with whole-number bounds (eg 0..1) still wants fine steps.
         if decimals == 0 and (max - min) <= 1 then decimals = 2 end
+        -- Fractional ranges need at least ~40 steps across the bar (0..0.4 -> 0.01).
+        while decimals > 0 and decimals < 3 and (max - min) * 10 ^ decimals < 40 do
+            decimals = decimals + 1
+        end
         local mult = 10 ^ decimals
         local function Fmt(n)
             local str = string.format("%." .. decimals .. "f", n)
@@ -2285,6 +2323,16 @@ ThemeMap = {TextColor3 = "TextMuted"}
             end
         }
         Library.Options[idx] = obj
+        Library.Keybinds[idx] = {
+            Name = name,
+            GetKey = function() return key end,
+            GetMode = function() return mode end,
+            IsActive = function()
+                if mode == "Toggle" then return toggled end
+                if mode == "Hold" then return held end
+                return false
+            end,
+        }
         return obj
     end
 
@@ -2325,8 +2373,386 @@ ThemeMap = {TextColor3 = "TextMuted"}
     end
 end
 
+-- =====================================================================
+-- Scripting API (made for driving the UI from code / an executor MCP)
+-- =====================================================================
+-- All of these are safe to call from `execute`:
+--   Library:Get("Idx")            -> current value
+--   Library:Set("Idx", value)     -> true/false   (runs the element's callback)
+--   Library:Press("Button name")  -> true/false   (clicks a button)
+--   Library:SelectTab("Combat")   -> true/false
+--   Library:SetVisible(true)      -> show / hide the menu (nil toggles)
+--   Library:ListOptions()         -> { Idx = {Type=, Value=} }
+--   Library:ListButtons()         -> { "name", ... }
+--   Library:ListTabs()            -> { "name", ... }
+--   Library:Dump()                -> JSON string of everything above
+local HttpService = game:GetService("HttpService")
+
+local function Plain(v)
+    local t = typeof(v)
+    if t == "Color3" then
+        return string.format("#%02x%02x%02x", math.floor(v.R * 255 + 0.5), math.floor(v.G * 255 + 0.5), math.floor(v.B * 255 + 0.5))
+    elseif t == "EnumItem" then return v.Name
+    elseif t == "table" then
+        local out = {}
+        for k, x in pairs(v) do out[tostring(k)] = Plain(x) end
+        return out
+    elseif t == "number" or t == "string" or t == "boolean" or t == "nil" then return v
+    end
+    return tostring(v)
+end
+
+function Library:Get(idx)
+    local o = Library.Options[idx]
+    return o and o.Value
+end
+
+function Library:Set(idx, value)
+    local o = Library.Options[idx]
+    if not o or type(o.SetValue) ~= "function" then return false end
+    local ok = pcall(function() o:SetValue(value) end)
+    return ok
+end
+
+function Library:Press(name)
+    local cb = Library.Buttons[name]
+    if not cb then return false end
+    return (pcall(cb))
+end
+
+function Library:SelectTab(name)
+    return Library.Window ~= nil and Library.Window:SelectTab(name) or false
+end
+
+function Library:SetVisible(state)
+    if not Library.ScreenGui then return false end
+    if state == nil then state = not Library.ScreenGui.Enabled end
+    Library.ScreenGui.Enabled = state and true or false
+    return Library.ScreenGui.Enabled
+end
+
+function Library:ListOptions()
+    local out = {}
+    for idx, o in pairs(Library.Options) do
+        out[tostring(idx)] = {Type = o.Type, Value = Plain(o.Value)}
+    end
+    return out
+end
+
+function Library:ListButtons()
+    local out = {}
+    for name in pairs(Library.Buttons) do out[#out + 1] = name end
+    table.sort(out)
+    return out
+end
+
+function Library:ListTabs()
+    local out = {}
+    if Library.Window then
+        for _, t in ipairs(Library.Window.Tabs) do out[#out + 1] = t.Name end
+    end
+    return out
+end
+
+function Library:ListKeybinds()
+    local out = {}
+    for idx, k in pairs(Library.Keybinds) do
+        local key = k.GetKey()
+        out[tostring(idx)] = {
+            Name = k.Name, Key = key and GetBindName(key) or "None",
+            Mode = k.GetMode(), Active = k.IsActive() and true or false,
+        }
+    end
+    return out
+end
+
+function Library:Dump()
+    return HttpService:JSONEncode({
+        Tabs = Library:ListTabs(), Buttons = Library:ListButtons(), Keybinds = Library:ListKeybinds(),
+        Options = Library:ListOptions(), Visible = Library.ScreenGui and Library.ScreenGui.Enabled or false,
+    })
+end
+
+-- =====================================================================
+-- Optional key system
+-- =====================================================================
+-- Library:KeySystem{
+--     Title    = "My Hub",
+--     Note     = "Join the discord for a key",
+--     Link     = "https://example.com/getkey",     -- "Get Key" copies this
+--
+--     -- how a key is checked (first one present wins):
+--     Validate = function(key) return true, "optional message" end,
+--     Url      = "https://api.example.com/check?key={key}&hwid={hwid}",
+--     Keys     = {"abc", "def"},                   -- plain list (readable by anyone with the script)
+--
+--     -- Url options
+--     Parse    = function(body, key) return ok, message end,  -- default: JSON {valid/success=true} or "true"/"valid"/"ok"
+--     Timeout  = 8,        -- seconds per request
+--     Retries  = 2,        -- extra attempts on network errors (never on "invalid")
+--
+--     -- abuse limits
+--     MaxAttempts = 5,     -- wrong keys before a lockout
+--     Cooldown    = 30,    -- lockout seconds
+--
+--     -- remembering a valid key (re-checked on every launch)
+--     SaveFile = "MyHubKey.json",
+--     SaveTTL  = 86400,    -- seconds the saved key stays usable (nil = forever)
+--
+--     OnSuccess = function(key) end,  OnFail = function(key, reason) end,
+-- }
+-- Blocks until the key is accepted (true) or the user cancels (false).
+-- CreateWindow{KeySystem = {...}} runs this first; leave the field out to skip it.
+-- NOTE: this runs on the player's machine, so it deters casual sharing only.
+-- Real protection needs a server you control (use Url/Validate) -- never trust
+-- the client alone.
+function Library:KeySystem(opts)
+    opts = opts or {}
+    local MAX_ATTEMPTS = opts.MaxAttempts or 5
+    local COOLDOWN = opts.Cooldown or 30
+    local TIMEOUT = opts.Timeout or 8
+    local RETRIES = opts.Retries or 2
+    local RED = Color3.fromRGB(255, 80, 80)
+
+    local function sanitize(raw)
+        local key = tostring(raw or "")
+        key = key:gsub("^%s+", "")
+        key = key:gsub("%s+$", "")
+        if #key > 200 or key:find("%c") then return nil end
+        return key
+    end
+
+    local function hwid()
+        local env = (getgenv and getgenv()) or _G
+        local f = env.gethwid or env.get_hwid
+        if f then
+            local ok, v = pcall(f)
+            if ok and v then return tostring(v) end
+        end
+        local ok, id = pcall(function() return game:GetService("RbxAnalyticsService"):GetClientId() end)
+        return ok and tostring(id) or ""
+    end
+
+    -- Default reply format: JSON {valid=true | success=true | status="valid"} or a bare word.
+    local function interpret(body)
+        local okj, data = pcall(function() return HttpService:JSONDecode(body) end)
+        if okj and type(data) == "table" then
+            local v = data.valid
+            if v == nil then v = data.success end
+            if v == nil and type(data.status) == "string" then
+                local st = data.status:lower()
+                v = (st == "valid" or st == "ok" or st == "success")
+            end
+            return v == true, data.message
+        end
+        local t = tostring(body):lower()
+        t = t:gsub("^%s+", "")
+        t = t:gsub("%s+$", "")
+        return (t == "true" or t == "valid" or t == "ok" or t == "success"), nil
+    end
+
+    local function httpCheck(key)
+        local encKey = HttpService:UrlEncode(key)
+        local encHwid = HttpService:UrlEncode(hwid())
+        local url = opts.Url:gsub("{key}", function() return encKey end)
+        url = url:gsub("{hwid}", function() return encHwid end)
+        local lastErr = "Network error"
+        for attempt = 0, RETRIES do
+            local done, body, err = false, nil, nil
+            task.spawn(function()
+                local ok, res = pcall(game.HttpGet, game, url)
+                if ok then body = res else err = res end
+                done = true
+            end)
+            local t0 = os.clock()
+            while not done and os.clock() - t0 < TIMEOUT do task.wait(0.05) end
+            if done and body then
+                if opts.Parse then
+                    local ok, a, b = pcall(opts.Parse, body, key)
+                    if not ok then return false, "Server reply not understood" end
+                    return a and true or false, b
+                end
+                return interpret(body)
+            end
+            lastErr = done and "Request failed" or "Timed out"
+            task.wait(math.min(2, 0.5 * (attempt + 1)))
+        end
+        return false, lastErr .. " - try again"
+    end
+
+    -- May yield (HTTP). Always called off the UI thread.
+    local function Verify(raw)
+        local key = sanitize(raw)
+        if not key or key == "" then return false, "Enter a key" end
+        if type(opts.Validate) == "function" then
+            local ok, a, b = pcall(opts.Validate, key)
+            if not ok then return false, "Validator error" end
+            return a and true or false, b
+        end
+        if opts.Url then return httpCheck(key) end
+        for _, k in ipairs(opts.Keys or {}) do
+            if k == key then return true end
+        end
+        return false
+    end
+
+    -- A previously saved key skips the prompt (still re-verified, and may expire).
+    if opts.SaveFile and isfile and readfile then
+        local ok, raw = pcall(function() return isfile(opts.SaveFile) and readfile(opts.SaveFile) or nil end)
+        if ok and raw then
+            local savedKey, savedAt = raw, nil
+            local okj, data = pcall(function() return HttpService:JSONDecode(raw) end)
+            if okj and type(data) == "table" then savedKey, savedAt = data.key, data.time end
+            local fresh = (not opts.SaveTTL) or (savedAt ~= nil and os.time() - savedAt < opts.SaveTTL)
+            if savedKey and fresh and (Verify(savedKey)) then
+                if opts.OnSuccess then pcall(opts.OnSuccess, sanitize(savedKey)) end
+                return true
+            end
+        end
+    end
+
+    local gui = Create("ScreenGui", {
+        Name = "LinoriaLiteKey", ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+        ResetOnSpawn = false, IgnoreGuiInset = true, DisplayOrder = 2147483000
+    })
+    ProtectGui(gui)
+
+    local function panel(parent, z, color, key)
+        return Create("Frame", {
+            Parent = parent, BackgroundColor3 = color, BorderSizePixel = 0, ZIndex = z,
+            ThemeMap = {BackgroundColor3 = key}
+        })
+    end
+    local W, H = 320, 170
+    local outline = panel(gui, 2, Library.Theme.OutlineColor, "OutlineColor")
+    outline.Position = UDim2.new(0.5, -W / 2, 0.5, -H / 2); outline.Size = UDim2.new(0, W, 0, H)
+    local inline = panel(outline, 2, Library.Theme.InlineColor, "InlineColor")
+    inline.Position = UDim2.new(0, 1, 0, 1); inline.Size = UDim2.new(1, -2, 1, -2)
+    local bg = panel(inline, 2, Library.Theme.BackgroundColor, "BackgroundColor")
+    bg.Position = UDim2.new(0, 1, 0, 1); bg.Size = UDim2.new(1, -2, 1, -2)
+    local accent = panel(bg, 3, Library.Theme.AccentColor, "AccentColor")
+    accent.Size = UDim2.new(1, 0, 0, 1)
+    MakeDraggable(bg, outline)
+
+    local function text(txt, y, h, color, key, align)
+        return Create("TextLabel", {
+            Parent = bg, BackgroundTransparency = 1, Position = UDim2.new(0, 10, 0, y),
+            Size = UDim2.new(1, -20, 0, h), Font = Library.Theme.Font, Text = txt, TextSize = 12,
+            TextColor3 = color, TextXAlignment = align or Enum.TextXAlignment.Left, ZIndex = 4,
+            ThemeMap = {TextColor3 = key}
+        })
+    end
+    text(opts.Title or "Key System", 8, 16, Library.Theme.TextColor, "TextColor")
+    text(opts.Note or "Enter your key to continue", 26, 14, Library.Theme.TextMuted, "TextMuted")
+
+    local boxOut = panel(bg, 4, Library.Theme.OutlineColor, "OutlineColor")
+    boxOut.Position = UDim2.new(0, 10, 0, 50); boxOut.Size = UDim2.new(1, -20, 0, 24)
+    local boxIn = panel(boxOut, 4, Library.Theme.InlineColor, "InlineColor")
+    boxIn.Position = UDim2.new(0, 1, 0, 1); boxIn.Size = UDim2.new(1, -2, 1, -2)
+    local boxBg = panel(boxIn, 4, Library.Theme.GroupBoxColor, "GroupBoxColor")
+    boxBg.Position = UDim2.new(0, 1, 0, 1); boxBg.Size = UDim2.new(1, -2, 1, -2)
+    local box = Create("TextBox", {
+        Parent = boxBg, BackgroundTransparency = 1, Size = UDim2.new(1, -10, 1, 0),
+        Position = UDim2.new(0, 5, 0, 0), Font = Library.Theme.Font, TextSize = 12,
+        Text = "", PlaceholderText = "Key...", PlaceholderColor3 = Library.Theme.TextMuted,
+        TextColor3 = Library.Theme.TextColor, TextXAlignment = Enum.TextXAlignment.Left,
+        ClearTextOnFocus = false, ZIndex = 5, ThemeMap = {TextColor3 = "TextColor"}
+    })
+
+    local status = text("", 80, 14, Library.Theme.TextMuted, "TextMuted")
+    local function setStatus(msg, color)
+        status.Text = msg
+        status.TextColor3 = color or Library.Theme.TextMuted
+    end
+
+    local function button(label, x, w, onClick)
+        local o = panel(bg, 4, Library.Theme.OutlineColor, "OutlineColor")
+        o.Position = UDim2.new(x, x == 0 and 10 or 0, 0, 108); o.Size = UDim2.new(w, -6, 0, 24)
+        local i = panel(o, 4, Library.Theme.InlineColor, "InlineColor")
+        i.Position = UDim2.new(0, 1, 0, 1); i.Size = UDim2.new(1, -2, 1, -2)
+        local b = Create("TextButton", {
+            Parent = i, BackgroundColor3 = Library.Theme.GroupBoxColor, BorderSizePixel = 0,
+            Position = UDim2.new(0, 1, 0, 1), Size = UDim2.new(1, -2, 1, -2), Font = Library.Theme.Font,
+            Text = label, TextSize = 12, TextColor3 = Library.Theme.TextColor, AutoButtonColor = false,
+            ZIndex = 5, ThemeMap = {BackgroundColor3 = "GroupBoxColor", TextColor3 = "TextColor"}
+        })
+        b.MouseEnter:Connect(function() b.BackgroundColor3 = Library.Theme.MainColor end)
+        b.MouseLeave:Connect(function() b.BackgroundColor3 = Library.Theme.GroupBoxColor end)
+        b.MouseButton1Click:Connect(onClick)
+        return o
+    end
+
+    local result                  -- nil = waiting, true / false = done
+    local busy, attempts, lockedUntil, wasLocked = false, 0, 0, false
+
+    local function submit()
+        if busy then return end
+        if os.clock() < lockedUntil then return end
+        busy = true
+        setStatus("Checking...")
+        local entered = box.Text
+        task.spawn(function()
+            local ok, msg = Verify(entered)
+            if ok then
+                setStatus("Key accepted", Library.Theme.AccentColor)
+                if opts.SaveFile and writefile then
+                    local payload = HttpService:JSONEncode({key = sanitize(entered), time = os.time()})
+                    pcall(writefile, opts.SaveFile, payload)
+                end
+                if opts.OnSuccess then pcall(opts.OnSuccess, sanitize(entered)) end
+                task.delay(0.4, function() result = true end)
+                return                      -- stay busy so it can't be re-submitted
+            end
+            attempts = attempts + 1
+            if opts.OnFail then pcall(opts.OnFail, entered, msg or "Invalid key") end
+            if attempts >= MAX_ATTEMPTS then
+                attempts = 0
+                lockedUntil = os.clock() + COOLDOWN
+            else
+                setStatus(msg or "Invalid key", RED)
+            end
+            busy = false
+        end)
+    end
+
+    local hasLink = opts.Link and opts.Link ~= ""
+    local n = hasLink and 3 or 2
+    local idx = 0
+    local function slot() idx = idx + 1; return (idx - 1) / n end
+    button("Check Key", slot(), 1 / n, submit)
+    if hasLink then
+        button("Get Key", slot(), 1 / n, function()
+            if setclipboard then
+                pcall(setclipboard, opts.Link)
+                setStatus("Link copied to clipboard")
+            else
+                setStatus(tostring(opts.Link))
+            end
+        end)
+    end
+    button("Cancel", slot(), 1 / n, function() result = false end)
+    box.FocusLost:Connect(function(enter) if enter then submit() end end)
+
+    while result == nil and gui.Parent do
+        local left = lockedUntil - os.clock()
+        if left > 0 then
+            setStatus(string.format("Too many attempts - wait %ds", math.ceil(left)), RED)
+            wasLocked = true
+        elseif wasLocked then
+            wasLocked = false
+            setStatus("")
+        end
+        task.wait(0.1)
+    end
+    gui:Destroy()
+    return result == true
+end
+
 function Library:CreateWindow(options)
     options = options or {}
+    if options.KeySystem then
+        if not Library:KeySystem(options.KeySystem) then return nil end
+    end
     local Title = options.Title or "Linoria Lite"
     local Size = options.Size or UDim2.new(0, 550, 0, 450)
     
@@ -2654,6 +3080,25 @@ ThemeMap = {BackgroundColor3 = "OutlineColor"}
 ThemeMap = {BackgroundColor3 = "MainColor"}
     })
 
+    function WindowObj:SelectTab(name)
+        local target
+        for _, t in ipairs(WindowObj.Tabs) do
+            if t.Name == name then target = t break end
+        end
+        if not target then return false end
+        if WindowObj.ClosePopups then WindowObj.ClosePopups() end
+        for _, t in ipairs(WindowObj.Tabs) do
+            t.Content.Visible = false
+            t.Label.TextColor3 = Library.Theme.TextMuted
+            t.Border.Visible = false
+        end
+        target.Content.Visible = true
+        target.Label.TextColor3 = Library.Theme.TextColor
+        target.Border.Visible = true
+        WindowObj.CurrentTab = target.Obj
+        return true
+    end
+
     function WindowObj:CreateTab(name, internal)
         -- A script asking for its own "Settings" tab gets the built-in one.
         if not internal and Library.SettingsTab and tostring(name):lower() == "settings" then
@@ -2756,7 +3201,8 @@ ThemeMap = {TextColor3 = "TextMuted"}
             Content = TabContent,
             Border = TabBorder,
             Label = TabText,
-            Obj = TabObj
+            Obj = TabObj,
+            Name = name
         })
 
         TabButton.MouseButton1Click:Connect(function()
@@ -3129,7 +3575,7 @@ ThemeMap = {BackgroundColor3 = "AccentColor"}
     -- edits it and UpdateCursor() applies it every frame.
     -- =================================================================
     local Cur = {
-        Style = "Ring", Size = 16, Color = Color3.fromRGB(255, 255, 255),
+        Style = "Arrow", Size = 16, Color = Color3.fromRGB(255, 255, 255),
         UseAccent = true, Rainbow = false, Trail = false, Spin = false,
     }
     Library.Cursor = Cur
@@ -3155,6 +3601,18 @@ ThemeMap = {BackgroundColor3 = "AccentColor"}
             Size = UDim2.new(0, 0, 0, 0), Visible = false
         })
     end
+
+    -- Arrow: Roblox's own pointer image (white fill, black outline), tinted with the
+    -- UI colour so it reads as a normal cursor that matches the theme. The glyph's
+    -- tip sits at the image centre, so centring the image on the mouse is the hotspot.
+    local ArrowC = Container("Arrow")
+    local ArrowImg = Create("ImageLabel", {
+        Parent = ArrowC, BackgroundTransparency = 1, BorderSizePixel = 0,
+        AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0, 0, 0, 0),
+        Size = UDim2.new(0, 48, 0, 48), ZIndex = 100001,
+        Image = "rbxasset://textures/Cursors/KeyboardMouse/ArrowFarCursor.png",
+        ImageColor3 = Library.Theme.AccentColor,
+    })
 
     -- Ring: halo + coloured ring + centre dot
     local RingC = Container("Ring")
@@ -3183,8 +3641,8 @@ ThemeMap = {BackgroundColor3 = "AccentColor"}
     local DiaSq = Box(DiaC, 100001);   DiaSq.Rotation = 45; local DiaStroke = Outline(DiaSq, 2, Color3.new(1, 1, 1))
     local DiaDot = Box(DiaC, 100002, true); DiaDot.BackgroundTransparency = 0
 
-    local Containers = {Ring = RingC, Crosshair = CrossC, Dot = DotC, Diamond = DiaC}
-    Library.CursorStyles = {"Ring", "Crosshair", "Dot", "Diamond"}
+    local Containers = {Arrow = ArrowC, Ring = RingC, Crosshair = CrossC, Dot = DotC, Diamond = DiaC}
+    Library.CursorStyles = {"Arrow", "Ring", "Crosshair", "Dot", "Diamond"}
 
     -- Fading trail, parented to the cursor GUI in screen space.
     local TRAIL_N = 10
@@ -3217,7 +3675,12 @@ ThemeMap = {BackgroundColor3 = "AccentColor"}
 
         for name, c in pairs(Containers) do c.Visible = (name == Cur.Style) end
 
-        if Cur.Style == "Ring" then
+        if Cur.Style == "Arrow" then
+            local px = math.max(16, math.floor(sz * 3))
+            SetSize(ArrowImg, px)
+            ArrowImg.ImageColor3 = color
+            ArrowC.Rotation = angle
+        elseif Cur.Style == "Ring" then
             SetSize(RingHalo, sz + 4); SetSize(RingRing, sz); SetSize(RingDotBg, 8); SetSize(RingDot, 4)
             RingStroke.Color = color; RingDot.BackgroundColor3 = color
             RingC.Rotation = angle
@@ -3306,6 +3769,65 @@ ThemeMap = {BackgroundColor3 = "AccentColor"}
     -- =================================================================
     -- Built-in Settings tab (always last)
     -- =================================================================
+    -- =================================================================
+    -- Draggable HUD overlays (watermark, keybind list). Positions are kept in
+    -- Library.Options.__OverlayPos so configs save and restore them.
+    -- =================================================================
+    local OverlayFrames, OverlayDefaults, OverlayPos = {}, {}, {}
+    local OverlayObj = {
+        Type = "Positions", Value = OverlayPos,
+        Save = function(self) return OverlayPos end,
+        Load = function(self, val)
+            if type(val) ~= "table" then return end
+            for k, v in pairs(val) do
+                local f = OverlayFrames[k]
+                if f and type(v) == "table" and tonumber(v[1]) and tonumber(v[2]) then
+                    OverlayPos[k] = {v[1], v[2]}
+                    f.Position = UDim2.new(0, v[1], 0, v[2])
+                end
+            end
+        end,
+    }
+    OverlayObj.SetValue = function(self, v) self:Load(v) end
+    Library.Options.__OverlayPos = OverlayObj
+
+    -- Drag with the left mouse button while the menu is open.
+    local function MakeOverlayDraggable(frame, key)
+        OverlayFrames[key] = frame
+        OverlayDefaults[key] = {frame.Position.X.Offset, frame.Position.Y.Offset}
+        frame.Active = true
+        local dragging, startMouse, startPos = false, nil, nil
+        frame.InputBegan:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1 and ScreenGui.Enabled and MainFrame.Visible then
+                dragging = true
+                startMouse = input.Position
+                startPos = Vector2.new(frame.Position.X.Offset, frame.Position.Y.Offset)
+            end
+        end)
+        TrackInput(UserInputService.InputChanged, function(input)
+            if not dragging or input.UserInputType ~= Enum.UserInputType.MouseMovement then return end
+            local d = input.Position - startMouse
+            local maxX = math.max(0, ScreenGui.AbsoluteSize.X - frame.AbsoluteSize.X)
+            local maxY = math.max(0, ScreenGui.AbsoluteSize.Y - frame.AbsoluteSize.Y)
+            local nx = math.clamp(startPos.X + d.X, 0, maxX)
+            local ny = math.clamp(startPos.Y + d.Y, 0, maxY)
+            frame.Position = UDim2.new(0, nx, 0, ny)
+            OverlayPos[key] = {nx, ny}
+        end)
+        TrackInput(UserInputService.InputEnded, function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1 then dragging = false end
+        end)
+    end
+
+    function WindowObj:ResetOverlays()
+        for k, d in pairs(OverlayDefaults) do
+            OverlayFrames[k].Position = UDim2.new(0, d[1], 0, d[2])
+        end
+        table.clear(OverlayPos)
+    end
+
+    MakeOverlayDraggable(WatermarkOutline, "Watermark")
+
     do
         local SettingsTab = WindowObj:CreateTab("Settings", true)
         Library.Window = WindowObj
@@ -3331,6 +3853,7 @@ ThemeMap = {BackgroundColor3 = "AccentColor"}
         MenuGroup:AddSlider("Menu Height", 300, 800, Size.Y.Offset, function(v)
             MainFrame.Size = UDim2.new(0, MainFrame.Size.X.Offset, 0, v)
         end, "__MenuHeight")
+        MenuGroup:AddButton("Reset overlay positions", function() WindowObj:ResetOverlays() end)
         MenuGroup:AddButton("Unload script", function() Library:Unload() end)
 
         -- Live list of keybinds that are currently on / held.
@@ -3362,30 +3885,70 @@ ThemeMap = {BackgroundColor3 = "AccentColor"}
             TextYAlignment = Enum.TextYAlignment.Top, Text = "", ZIndex = 52,
             ThemeMap = {TextColor3 = "TextColor"}
         })
-        local kbEnabled, kbTimer, kbLast = false, 0, ""
-        MenuGroup:AddToggle("Keybind List", false, function(v)
+        -- Keybind list: every bound key (standalone binds AND binds attached to
+        -- toggles), active ones in the accent colour, others muted.
+        MakeOverlayDraggable(KbOutline, "KeybindList")
+        KbText.RichText = true
+        local kbEnabled, kbTimer, kbLast = true, 0, ""
+        MenuGroup:AddToggle("Keybind List", true, function(v)
             kbEnabled = v
-            if not v then KbOutline.Visible = false end
+            KbOutline.Visible = v and ScreenGui.Enabled
+            kbLast = ""
         end, "__KeybindList")
+
+        local function esc(t)
+            t = tostring(t):gsub("&", "&amp;")
+            t = t:gsub("<", "&lt;")
+            return (t:gsub(">", "&gt;"))
+        end
+        local function hex(c)
+            return string.format("#%02x%02x%02x", math.floor(c.R * 255 + 0.5), math.floor(c.G * 255 + 0.5), math.floor(c.B * 255 + 0.5))
+        end
+
+        local function RefreshKeybindList()
+            local entries = {}
+            for idx, k in pairs(Library.Keybinds) do
+                if tostring(idx):sub(1, 2) ~= "__" then
+                    local okKey, key = pcall(k.GetKey)
+                    if okKey and key and key ~= Enum.KeyCode.Unknown then
+                        local okA, active = pcall(k.IsActive)
+                        entries[#entries + 1] = {
+                            name = k.Name, key = GetBindName(key),
+                            mode = k.GetMode(), active = okA and active or false
+                        }
+                    end
+                end
+            end
+            table.sort(entries, function(a, b) return a.name < b.name end)
+
+            local accent, muted = hex(Library.Theme.AccentColor), hex(Library.Theme.TextMuted)
+            local rich, plain = {"Keybinds"}, {"Keybinds"}
+            for _, e in ipairs(entries) do
+                local line = string.format("[%s] %s (%s)", e.key, e.name, e.mode)
+                plain[#plain + 1] = line
+                rich[#rich + 1] = string.format('<font color="%s">%s</font>', e.active and accent or muted, esc(line))
+            end
+            if #entries == 0 then
+                plain[#plain + 1] = "(no keybinds)"
+                rich[#rich + 1] = string.format('<font color="%s">(no keybinds)</font>', muted)
+            end
+
+            local richText = table.concat(rich, "\n")
+            if richText ~= kbLast then
+                kbLast = richText
+                KbText.Text = richText
+                local bounds = GetTextBounds(table.concat(plain, "\n"), Library.Theme.Font, 12)
+                KbOutline.Size = UDim2.new(0, math.max(110, bounds.X + 18), 0, bounds.Y + 10)
+            end
+        end
+
         TrackInput(RunService.Heartbeat, function(dt)
             if not kbEnabled then return end
+            KbOutline.Visible = ScreenGui.Enabled
             kbTimer = kbTimer + dt
             if kbTimer < 0.1 then return end
             kbTimer = 0
-            local lines = {"Keybinds"}
-            for idx, o in pairs(Library.Options) do
-                if o.Type == "Keybind" and o.Name and idx:sub(1, 2) ~= "__"
-                    and o.GetState and o:GetState() then
-                    lines[#lines + 1] = string.format("[%s] %s (%s)", tostring(o.Value), o.Name, o:GetMode())
-                end
-            end
-            local text = table.concat(lines, "\n")
-            if text == kbLast then return end
-            kbLast = text
-            KbText.Text = text
-            local bounds = GetTextBounds(text, Library.Theme.Font, 12)
-            KbOutline.Size = UDim2.new(0, math.max(110, bounds.X + 18), 0, bounds.Y + 10)
-            KbOutline.Visible = ScreenGui.Enabled and #lines > 1
+            RefreshKeybindList()
         end)
 
         local AppGroup = SettingsTab:CreateGroupBox("Left", "Appearance")
@@ -3445,6 +4008,10 @@ ThemeMap = {BackgroundColor3 = "AccentColor"}
         CursorGroup:AddToggle("Spin", false, function(v) CurCfg.Spin = v end, "__CursorSpin")
         CursorGroup:AddToggle("Trail", false, function(v) CurCfg.Trail = v end, "__CursorTrail")
     end
+
+    -- Handy globals so an executor / MCP session can reach the UI after load.
+    local env = (getgenv and getgenv()) or _G
+    env.LinoriaLite, env.LinoriaWindow = Library, WindowObj
 
     return WindowObj
 end
