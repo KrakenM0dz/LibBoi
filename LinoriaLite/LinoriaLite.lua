@@ -51,6 +51,10 @@ function Library:Unload()
         Library.ScreenGui:Destroy()
         Library.ScreenGui = nil
     end
+    if Library.HudGui then
+        Library.HudGui:Destroy()
+        Library.HudGui = nil
+    end
     Library.Unloading = false
 end
 
@@ -2771,6 +2775,15 @@ function Library:CreateWindow(options)
     
     ProtectGui(ScreenGui)
 
+    -- HUD overlays (watermark, keybind list, notifications) get their own GUI so they
+    -- stay on screen when the menu is closed; closing the menu only disables ScreenGui.
+    local HudGui = Create("ScreenGui", {
+        Name = "LinoriaLiteHud", ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+        ResetOnSpawn = false, DisplayOrder = 10
+    })
+    ProtectGui(HudGui)
+    Library.HudGui = HudGui
+
     local TooltipOutline = Create("Frame", {
         Parent = ScreenGui,
         BackgroundColor3 = Library.Theme.OutlineColor,
@@ -2844,7 +2857,7 @@ ThemeMap = {TextColor3 = "TextColor"}
     -- Watermark UI
     local WatermarkOutline = Create("Frame", {
         Name = "Watermark",
-        Parent = ScreenGui,
+        Parent = HudGui,
         BackgroundColor3 = Library.Theme.OutlineColor,
         Position = UDim2.new(0, 15, 0, 15),
         Size = UDim2.new(0, 0, 0, 20),
@@ -2900,7 +2913,7 @@ ThemeMap = {TextColor3 = "TextColor"}
     -- Notification UI
     local NotificationContainer = Create("Frame", {
         Name = "Notifications",
-        Parent = ScreenGui,
+        Parent = HudGui,
         BackgroundTransparency = 1,
         Position = UDim2.new(1, -15, 1, -15),
         Size = UDim2.new(0, 250, 0, 500),
@@ -3807,8 +3820,8 @@ ThemeMap = {BackgroundColor3 = "AccentColor"}
         TrackInput(UserInputService.InputChanged, function(input)
             if not dragging or input.UserInputType ~= Enum.UserInputType.MouseMovement then return end
             local d = input.Position - startMouse
-            local maxX = math.max(0, ScreenGui.AbsoluteSize.X - frame.AbsoluteSize.X)
-            local maxY = math.max(0, ScreenGui.AbsoluteSize.Y - frame.AbsoluteSize.Y)
+            local maxX = math.max(0, HudGui.AbsoluteSize.X - frame.AbsoluteSize.X)
+            local maxY = math.max(0, HudGui.AbsoluteSize.Y - frame.AbsoluteSize.Y)
             local nx = math.clamp(startPos.X + d.X, 0, maxX)
             local ny = math.clamp(startPos.Y + d.Y, 0, maxY)
             frame.Position = UDim2.new(0, nx, 0, ny)
@@ -3858,7 +3871,7 @@ ThemeMap = {BackgroundColor3 = "AccentColor"}
 
         -- Live list of keybinds that are currently on / held.
         local KbOutline = Create("Frame", {
-            Parent = ScreenGui, BackgroundColor3 = Library.Theme.OutlineColor,
+            Parent = HudGui, BackgroundColor3 = Library.Theme.OutlineColor,
             Position = UDim2.new(0, 15, 0, 45), Size = UDim2.new(0, 120, 0, 20),
             BorderSizePixel = 0, Visible = false, ZIndex = 50,
             ThemeMap = {BackgroundColor3 = "OutlineColor"}
@@ -3892,7 +3905,7 @@ ThemeMap = {BackgroundColor3 = "AccentColor"}
         local kbEnabled, kbTimer, kbLast = true, 0, ""
         MenuGroup:AddToggle("Keybind List", true, function(v)
             kbEnabled = v
-            KbOutline.Visible = v and ScreenGui.Enabled
+            KbOutline.Visible = v
             kbLast = ""
         end, "__KeybindList")
 
@@ -3944,7 +3957,7 @@ ThemeMap = {BackgroundColor3 = "AccentColor"}
 
         TrackInput(RunService.Heartbeat, function(dt)
             if not kbEnabled then return end
-            KbOutline.Visible = ScreenGui.Enabled
+            KbOutline.Visible = true
             kbTimer = kbTimer + dt
             if kbTimer < 0.1 then return end
             kbTimer = 0
