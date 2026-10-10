@@ -47,6 +47,7 @@ function Library:Unload()
     table.clear(Library.Buttons)
     table.clear(Library.Keybinds)
     Library.Window, Library.SettingsTab, Library.SettingsMenuGroup = nil, nil, nil
+    Library.NativeSettings = false
     if Library.ScreenGui then
         Library.ScreenGui:Destroy()
         Library.ScreenGui = nil
@@ -2770,6 +2771,363 @@ function Library:KeySystem(opts)
     return result == true
 end
 
+-- =====================================================================
+-- Built-in theme + config managers
+-- =====================================================================
+-- The Settings tab builds the Themes and Configuration sections by itself, so a
+-- script never has to load or wire ThemeManager / SaveManager. Option ids match
+-- the standalone managers (ThemeManager_*, SaveManager_*), so scripts that still
+-- load those keep working; their UI calls are absorbed (Library.SettingsSink).
+--
+--   Library:SetFolder("MyHub")            -- config/theme folder (CreateWindow{Folder=} too)
+--   Library.ThemeManager:ApplyTheme("Nord") / :LoadDefaultTheme()
+--   Library.SaveManager:Save("name") / :Load("name") / :LoadAutoloadConfig()
+local ThemeManager = {Folder = "LinoriaLiteSettings"}
+local SaveManager = {Folder = "LinoriaLiteSettings", Ignore = {}}
+Library.ThemeManager, Library.SaveManager = ThemeManager, SaveManager
+
+-- Chains forever and does nothing: stands in for a group that already exists.
+Library.SettingsSink = setmetatable({}, {__index = function(t) return function() return t end end})
+
+ThemeManager.BuiltInThemes = {
+    ["Default"] = {1, {FontColor = "ffffff", MainColor = "1c1c1c", AccentColor = "0055ff", BackgroundColor = "141414", OutlineColor = "323232"}},
+    ["BBot"] = {2, {FontColor = "ffffff", MainColor = "1e1e1e", AccentColor = "7e48a3", BackgroundColor = "232323", OutlineColor = "141414"}},
+    ["Fatality"] = {3, {FontColor = "ffffff", MainColor = "1e1842", AccentColor = "c50754", BackgroundColor = "191335", OutlineColor = "3c355d"}},
+    ["Jester"] = {4, {FontColor = "ffffff", MainColor = "242424", AccentColor = "db4467", BackgroundColor = "1c1c1c", OutlineColor = "373737"}},
+    ["Mint"] = {5, {FontColor = "ffffff", MainColor = "242424", AccentColor = "3db488", BackgroundColor = "1c1c1c", OutlineColor = "373737"}},
+    ["Tokyo Night"] = {6, {FontColor = "ffffff", MainColor = "191925", AccentColor = "6759b3", BackgroundColor = "16161f", OutlineColor = "323232"}},
+    ["Ubuntu"] = {7, {FontColor = "ffffff", MainColor = "3e3e3e", AccentColor = "e2581e", BackgroundColor = "323232", OutlineColor = "191919"}},
+    ["Quartz"] = {8, {FontColor = "ffffff", MainColor = "232330", AccentColor = "426e87", BackgroundColor = "1d1b26", OutlineColor = "27232f"}},
+    ["Midnight"] = {9, {FontColor = "ffffff", MainColor = "14161f", AccentColor = "4f8cff", BackgroundColor = "0e1017", OutlineColor = "262a38"}},
+    ["Crimson"] = {10, {FontColor = "ffffff", MainColor = "1d1416", AccentColor = "e0283c", BackgroundColor = "150e10", OutlineColor = "3a2226"}},
+    ["Sakura"] = {11, {FontColor = "ffffff", MainColor = "24181e", AccentColor = "ff7eb6", BackgroundColor = "1a1116", OutlineColor = "3d2832"}},
+    ["Dracula"] = {12, {FontColor = "ffffff", MainColor = "282a36", AccentColor = "bd93f9", BackgroundColor = "21222c", OutlineColor = "44475a"}},
+    ["Nord"] = {13, {FontColor = "ffffff", MainColor = "2e3440", AccentColor = "88c0d0", BackgroundColor = "262b35", OutlineColor = "434c5e"}},
+    ["Gold"] = {14, {FontColor = "ffffff", MainColor = "1e1b14", AccentColor = "f5b83d", BackgroundColor = "15130e", OutlineColor = "3a3524"}},
+    ["Toxic"] = {15, {FontColor = "ffffff", MainColor = "16201a", AccentColor = "7dff3a", BackgroundColor = "0f1612", OutlineColor = "27382c"}},
+    ["Ocean"] = {16, {FontColor = "ffffff", MainColor = "10202b", AccentColor = "1fc8e0", BackgroundColor = "0b1720", OutlineColor = "1f3a4a"}},
+}
+
+local function TM_ParseHex(hex)
+    hex = tostring(hex):gsub("#", "")
+    return Color3.fromRGB(
+        tonumber(hex:sub(1, 2), 16) or 255,
+        tonumber(hex:sub(3, 4), 16) or 255,
+        tonumber(hex:sub(5, 6), 16) or 255
+    )
+end
+
+local function TM_ToHex(c)
+    return string.format("%02x%02x%02x",
+        math.clamp(math.floor(c.R * 255 + 0.5), 0, 255),
+        math.clamp(math.floor(c.G * 255 + 0.5), 0, 255),
+        math.clamp(math.floor(c.B * 255 + 0.5), 0, 255))
+end
+
+local function EnsureFolders(folder, sub)
+    if not (isfolder and makefolder) then return end
+    pcall(function()
+        if not isfolder(folder) then makefolder(folder) end
+        if sub and not isfolder(folder .. "/" .. sub) then makefolder(folder .. "/" .. sub) end
+    end)
+end
+
+-- ---- themes ---------------------------------------------------------------
+-- Accepts a built-in name ("Nord"), {order, data}, or a plain colour table.
+function ThemeManager:ApplyTheme(theme)
+    if type(theme) == "string" then
+        theme = self.BuiltInThemes[theme]
+        if not theme then return false end
+    end
+    local data = theme
+    if type(theme) == "table" and theme[2] then data = theme[2] end
+
+    local new = {}
+    for rawKey, val in pairs(data) do
+        local key = (rawKey == "FontColor") and "TextColor" or rawKey
+        if typeof(val) == "Color3" then
+            new[key] = val
+        elseif type(val) == "string" then
+            new[key] = TM_ParseHex(val)
+        elseif type(val) == "table" then
+            local r = val.R or val.r or val[1] or 1
+            local g = val.G or val.g or val[2] or 1
+            local b = val.B or val.b or val[3] or 1
+            if r > 1 or g > 1 or b > 1 then new[key] = Color3.fromRGB(r, g, b)
+            else new[key] = Color3.new(r, g, b) end
+        end
+    end
+    if new.BackgroundColor then new.GroupBoxColor = new.BackgroundColor end
+    if new.MainColor then
+        new.InlineColor = Color3.new(
+            math.clamp(new.MainColor.R + 30 / 255, 0, 1),
+            math.clamp(new.MainColor.G + 30 / 255, 0, 1),
+            math.clamp(new.MainColor.B + 30 / 255, 0, 1))
+    end
+    if new.TextColor then
+        new.TextMuted = Color3.new(new.TextColor.R * 0.588, new.TextColor.G * 0.588, new.TextColor.B * 0.588)
+    end
+    for key, color in pairs(new) do
+        if Library.Theme[key] ~= nil then
+            Library:UpdateTheme(key, color)
+            local picker = Library.Options["ThemeManager_" .. key]
+            if picker then pcall(function() picker:SetValue(color) end) end
+        end
+    end
+    return true
+end
+
+function ThemeManager:RefreshCustomThemes()
+    local list = {}
+    if listfiles and isfolder and isfolder(self.Folder .. "/themes") then
+        for _, file in ipairs(listfiles(self.Folder .. "/themes")) do
+            local name = file:match("([^/\\]+)%.json$")
+            if name then list[#list + 1] = name end
+        end
+    end
+    return list
+end
+
+function ThemeManager:SaveCustomTheme(name)
+    if not writefile then return false end
+    EnsureFolders(self.Folder, "themes")
+    local t = Library.Theme
+    local ok, encoded = pcall(function()
+        return HttpService:JSONEncode({
+            BackgroundColor = TM_ToHex(t.BackgroundColor), MainColor = TM_ToHex(t.MainColor),
+            AccentColor = TM_ToHex(t.AccentColor), OutlineColor = TM_ToHex(t.OutlineColor),
+            FontColor = TM_ToHex(t.TextColor),
+        })
+    end)
+    if not ok then return false end
+    return (pcall(writefile, self.Folder .. "/themes/" .. name .. ".json", encoded))
+end
+
+function ThemeManager:LoadCustomTheme(name)
+    if not readfile then return false end
+    local ok, content = pcall(readfile, self.Folder .. "/themes/" .. name .. ".json")
+    if not ok then return false end
+    local okj, data = pcall(function() return HttpService:JSONDecode(content) end)
+    if not okj or type(data) ~= "table" then return false end
+    return self:ApplyTheme(data)
+end
+
+function ThemeManager:LoadDefaultTheme()
+    if not readfile then return end
+    local ok, content = pcall(readfile, self.Folder .. "/themes/default.txt")
+    if not (ok and content ~= "") then return end
+    if self.BuiltInThemes[content] then
+        self:ApplyTheme(content)
+        local dd = Library.Options.ThemeManager_ThemeList
+        if dd then pcall(function() dd:SetValue(content) end) end
+    else
+        self:LoadCustomTheme(content)
+        local dd = Library.Options.ThemeManager_CustomThemeList
+        if dd then pcall(function() dd:SetValue(content) end) end
+    end
+end
+
+function ThemeManager:_BuildSection(Tab)
+    local G = Tab:CreateGroupBox("Left", "Themes")
+
+    G:AddColorPicker("Background color", Library.Theme.BackgroundColor, function(c)
+        Library:UpdateTheme("BackgroundColor", c)
+        Library:UpdateTheme("GroupBoxColor", c)
+    end, "ThemeManager_BackgroundColor")
+    G:AddColorPicker("Main color", Library.Theme.MainColor, function(c)
+        Library:UpdateTheme("MainColor", c)
+        Library:UpdateTheme("InlineColor", Color3.new(
+            math.clamp(c.R + 30 / 255, 0, 1), math.clamp(c.G + 30 / 255, 0, 1), math.clamp(c.B + 30 / 255, 0, 1)))
+    end, "ThemeManager_MainColor")
+    G:AddColorPicker("Accent color", Library.Theme.AccentColor, function(c)
+        Library:UpdateTheme("AccentColor", c)
+    end, "ThemeManager_AccentColor")
+    G:AddColorPicker("Outline color", Library.Theme.OutlineColor, function(c)
+        Library:UpdateTheme("OutlineColor", c)
+    end, "ThemeManager_OutlineColor")
+    G:AddColorPicker("Font color", Library.Theme.TextColor, function(c)
+        Library:UpdateTheme("TextColor", c)
+        Library:UpdateTheme("TextMuted", Color3.new(c.R * 0.588, c.G * 0.588, c.B * 0.588))
+    end, "ThemeManager_TextColor")
+
+    local names = {}
+    for name, v in pairs(self.BuiltInThemes) do names[v[1]] = name end
+    G:AddDropdown("Theme list", names, "Default", function(theme)
+        if self.BuiltInThemes[theme] then self:ApplyTheme(theme) end
+    end, "ThemeManager_ThemeList")
+
+    G:AddButton("Set as default", function()
+        local name = Library.Options.ThemeManager_ThemeList.Value
+        if writefile and name then
+            EnsureFolders(self.Folder, "themes")
+            pcall(writefile, self.Folder .. "/themes/default.txt", name)
+            Library:Notify("Default theme: " .. name)
+        end
+    end)
+
+    G:AddInput("Custom theme name", "", function() end, "ThemeManager_CustomThemeName")
+    self._customList = G:AddDropdown("Custom themes", self:RefreshCustomThemes(), nil, function() end, "ThemeManager_CustomThemeList")
+
+    G:AddButton("Save theme", function()
+        local name = Library.Options.ThemeManager_CustomThemeName.Value
+        if name and name ~= "" and self:SaveCustomTheme(name) then
+            self._customList:RefreshOptions(self:RefreshCustomThemes())
+            self._customList:SetValue(name)
+            Library:Notify("Saved theme: " .. name)
+        else
+            Library:Notify("Enter a theme name first")
+        end
+    end)
+    G:AddButton("Load theme", function()
+        local name = Library.Options.ThemeManager_CustomThemeList.Value
+        if name and name ~= "" then
+            Library:Notify((self:LoadCustomTheme(name) and "Loaded theme: " or "Failed to load theme: ") .. name)
+        end
+    end)
+    G:AddButton("Refresh list", function()
+        self._customList:RefreshOptions(self:RefreshCustomThemes())
+    end)
+end
+
+-- ---- configs --------------------------------------------------------------
+function SaveManager:SetIgnoreIndexes(list)
+    for _, idx in ipairs(list) do self.Ignore[idx] = true end
+end
+
+-- Themes are managed separately, and the picker/list widgets themselves aren't settings.
+SaveManager:SetIgnoreIndexes({
+    "ThemeManager_BackgroundColor", "ThemeManager_MainColor", "ThemeManager_AccentColor",
+    "ThemeManager_OutlineColor", "ThemeManager_TextColor", "ThemeManager_ThemeList",
+    "ThemeManager_CustomThemeName", "ThemeManager_CustomThemeList",
+    "SaveManager_ConfigName", "SaveManager_ConfigList",
+})
+function SaveManager:IgnoreThemeSettings() end   -- already ignored; kept for old scripts
+
+function SaveManager:Save(name)
+    if not writefile or not name or name == "" then return false end
+    EnsureFolders(self.Folder)
+    local data = {}
+    for idx, obj in pairs(Library.Options) do
+        if not self.Ignore[idx] and type(obj.Save) == "function" then
+            data[idx] = {Type = obj.Type, Value = obj:Save()}
+        end
+    end
+    local ok, encoded = pcall(function() return HttpService:JSONEncode(data) end)
+    if not ok then return false end
+    return (pcall(writefile, self.Folder .. "/" .. name .. ".json", encoded))
+end
+
+function SaveManager:Load(name)
+    if not readfile then return false end
+    local ok, content = pcall(readfile, self.Folder .. "/" .. name .. ".json")
+    if not ok then return false end
+    local okj, data = pcall(function() return HttpService:JSONDecode(content) end)
+    if not okj or type(data) ~= "table" then return false end
+    for idx, saved in pairs(data) do
+        local obj = Library.Options[idx]
+        if obj and type(saved) == "table" and obj.Type == saved.Type
+            and not self.Ignore[idx] and type(obj.Load) == "function" then
+            pcall(function() obj:Load(saved.Value) end)
+        end
+    end
+    return true
+end
+
+function SaveManager:RefreshConfigList()
+    local list = {}
+    if listfiles and isfolder and isfolder(self.Folder) then
+        for _, file in ipairs(listfiles(self.Folder)) do
+            local name = file:match("([^/\\]+)%.json$")
+            if name then list[#list + 1] = name end
+        end
+    end
+    return list
+end
+
+function SaveManager:LoadAutoloadConfig()
+    if not readfile then return end
+    local ok, content = pcall(readfile, self.Folder .. "/autoload.txt")
+    if ok and content ~= "" then self:Load(content) end
+end
+
+function SaveManager:_RefreshUI()
+    if self._cfgList then self._cfgList:RefreshOptions(self:RefreshConfigList()) end
+    if self._autoLabel then
+        local text = "none"
+        if readfile then
+            local ok, content = pcall(readfile, self.Folder .. "/autoload.txt")
+            if ok and content ~= "" then text = content end
+        end
+        self._autoLabel:SetText("Autoload config: " .. text)
+    end
+end
+
+function SaveManager:_BuildSection(Tab)
+    local G = Tab:CreateGroupBox("Right", "Configuration")
+    local nameBox = G:AddInput("Config name", "", function() end, "SaveManager_ConfigName")
+    self._cfgList = G:AddDropdown("Config list", self:RefreshConfigList(), nil, function() end, "SaveManager_ConfigList")
+
+    G:AddButton("Create config", function()
+        local name = nameBox.Value
+        if name and name ~= "" and self:Save(name) then
+            self:_RefreshUI(); self._cfgList:SetValue(name)
+            Library:Notify("Created config: " .. name)
+        else
+            Library:Notify("Enter a config name first")
+        end
+    end)
+    G:AddButton("Load config", function()
+        local name = self._cfgList.Value
+        if name and name ~= "" then
+            Library:Notify((self:Load(name) and "Loaded config: " or "Failed to load: ") .. name)
+        end
+    end)
+    G:AddButton("Overwrite config", function()
+        local name = self._cfgList.Value
+        if name and name ~= "" and self:Save(name) then Library:Notify("Overwrote config: " .. name) end
+    end)
+    G:AddButton("Delete config", function()
+        local name = self._cfgList.Value
+        local path = name and (self.Folder .. "/" .. name .. ".json")
+        if path and isfile and delfile and isfile(path) then
+            pcall(delfile, path)
+            self:_RefreshUI()
+            self._cfgList:SetValue(self:RefreshConfigList()[1] or "")
+            Library:Notify("Deleted config: " .. name)
+        end
+    end)
+    G:AddButton("Refresh list", function() self:_RefreshUI() end)
+
+    self._autoLabel = G:AddLabel("Autoload config: none")
+    G:AddButton("Set as autoload", function()
+        local name = self._cfgList.Value
+        if name and name ~= "" and writefile then
+            EnsureFolders(self.Folder)
+            pcall(writefile, self.Folder .. "/autoload.txt", name)
+            self:_RefreshUI()
+            Library:Notify("Autoload config: " .. name)
+        end
+    end)
+    G:AddButton("Clear autoload", function()
+        if isfile and delfile and isfile(self.Folder .. "/autoload.txt") then
+            pcall(delfile, self.Folder .. "/autoload.txt")
+            self:_RefreshUI()
+        end
+    end)
+    self:_RefreshUI()
+end
+
+-- One call moves both managers (and refreshes their lists) to a new folder.
+function Library:SetFolder(name)
+    name = tostring(name or ""):gsub("[^%w_%- ]", "")
+    if name == "" then return end
+    ThemeManager.Folder, SaveManager.Folder = name, name
+    pcall(function() SaveManager:_RefreshUI() end)
+    pcall(function()
+        if ThemeManager._customList then ThemeManager._customList:RefreshOptions(ThemeManager:RefreshCustomThemes()) end
+    end)
+end
+
 function Library:CreateWindow(options)
     options = options or {}
     if options.KeySystem then
@@ -3259,37 +3617,42 @@ ThemeMap = {TextColor3 = "TextMuted"}
         end
 
         function TabObj:CreateGroupBox(side, groupName)
-            -- Menu / Themes / Configuration always belong in the built-in
-            -- Settings tab, whichever tab a script asked to put them on.
-            if not internal and Library.SettingsTab and Library.SettingsTab ~= TabObj then
-                local n = tostring(groupName):lower()
-                local target
-                if n == "menu" then target = Library.SettingsMenuGroup
-                elseif n == "themes" or n == "configuration" or n == "config" then
+            -- Menu / Themes / Configuration belong to the built-in Settings tab,
+            -- whichever tab a script asked for. Themes + Configuration already exist
+            -- there (built in), so a script's own copies are absorbed by a sink.
+            local n = tostring(groupName):lower()
+            local isThemeOrConfig = (n == "themes" or n == "configuration" or n == "config")
+            local target
+            if Library.NativeSettings and isThemeOrConfig then
+                target = Library.SettingsSink
+            elseif not internal and Library.SettingsTab and Library.SettingsTab ~= TabObj then
+                if n == "menu" then
+                    target = Library.SettingsMenuGroup
+                elseif isThemeOrConfig then
                     target = Library.SettingsTab:CreateGroupBox(n == "themes" and "Left" or "Right",
                         n == "config" and "Configuration" or groupName)
                 end
-                if target then
-                    -- Hide this tab if nothing is left on it.
-                    task.defer(function()
-                        if groupCount == 0 and TabButton.Parent then
-                            TabButton.Visible = false
-                            TabContent.Visible = false
-                            if WindowObj.CurrentTab == TabObj then
-                                for _, t in ipairs(WindowObj.Tabs) do
-                                    if t.Button.Visible and t.Button ~= TabButton then
-                                        t.Content.Visible = true
-                                        t.Label.TextColor3 = Library.Theme.TextColor
-                                        t.Border.Visible = true
-                                        WindowObj.CurrentTab = t.Obj
-                                        break
-                                    end
+            end
+            if target then
+                -- Hide this tab if nothing is left on it.
+                task.defer(function()
+                    if groupCount == 0 and TabButton.Parent and Library.SettingsTab ~= TabObj then
+                        TabButton.Visible = false
+                        TabContent.Visible = false
+                        if WindowObj.CurrentTab == TabObj then
+                            for _, t in ipairs(WindowObj.Tabs) do
+                                if t.Button.Visible and t.Button ~= TabButton then
+                                    t.Content.Visible = true
+                                    t.Label.TextColor3 = Library.Theme.TextColor
+                                    t.Border.Visible = true
+                                    WindowObj.CurrentTab = t.Obj
+                                    break
                                 end
                             end
                         end
-                    end)
-                    return target
-                end
+                    end
+                end)
+                return target
             end
             groupCount = groupCount + 1
             local GroupObj = {}
@@ -3759,6 +4122,66 @@ ThemeMap = {BackgroundColor3 = "AccentColor"}
         end
     end
 
+    -- =================================================================
+    -- First-person shooter support. FPS games lock the mouse to the screen
+    -- centre and steer the camera with it, which makes a menu unusable. While the
+    -- menu is open: (1) a Modal button + MouseBehavior.Default free the mouse,
+    -- (2) in first-person-like games the camera is held still. Everything is
+    -- put back the moment the menu closes (or the UI unloads).
+    -- =================================================================
+    Library.MouseOptions = {Unlock = true, Freeze = true}
+    local ModalBtn = Create("TextButton", {
+        Parent = ScreenGui, BackgroundTransparency = 1, Size = UDim2.new(0, 0, 0, 0),
+        Text = "", Modal = false, ZIndex = 1
+    })
+    local fpsActive, savedBehavior, frozenCF, freezeOn = false, nil, nil, false
+    local lastLockedAt = -math.huge   -- last time the game had the mouse locked
+    -- Bound once (unique name) and gated by frozenCF; binding/unbinding on every
+    -- open and close proved unreliable across executors.
+    local FREEZE_NAME = "LL" .. RandomString(10)
+
+    local function freezeStep()
+        local cam = workspace.CurrentCamera
+        if frozenCF and cam then cam.CFrame = frozenCF end
+    end
+    RunService:BindToRenderStep(FREEZE_NAME, Enum.RenderPriority.Last.Value + 1, freezeStep)
+
+    -- Read-only view of the mouse/camera hold, for scripts and MCP probing.
+    function Library:GetMouseState()
+        return {Active = fpsActive, CameraFrozen = freezeOn, Saved = savedBehavior and savedBehavior.Name or nil}
+    end
+
+    local function FpsUpdate(menuOpen)
+        local opt = Library.MouseOptions
+        local want = menuOpen and opt.Unlock
+        if not fpsActive and UserInputService.MouseBehavior ~= Enum.MouseBehavior.Default then
+            lastLockedAt = os.clock()
+        end
+        if want and not fpsActive then
+            fpsActive = true
+            savedBehavior = UserInputService.MouseBehavior
+            ModalBtn.Modal = true
+            -- First-person-like: the mouse is locked, or the camera sits at the head.
+            local cam = workspace.CurrentCamera
+            local firstPerson = savedBehavior ~= Enum.MouseBehavior.Default
+                or os.clock() - lastLockedAt < 1
+            if not firstPerson and cam then
+                local head = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Head")
+                firstPerson = head ~= nil and (cam.CFrame.Position - head.Position).Magnitude < 1.5
+            end
+            freezeOn = firstPerson and opt.Freeze and cam ~= nil
+            if freezeOn then frozenCF = cam.CFrame end
+        elseif not want and fpsActive then
+            fpsActive = false
+            ModalBtn.Modal = false
+            freezeOn = false
+            frozenCF = nil
+            -- Hand the mouse back to the game exactly as it was.
+            if savedBehavior then UserInputService.MouseBehavior = savedBehavior end
+        end
+        if fpsActive then UserInputService.MouseBehavior = Enum.MouseBehavior.Default end
+    end
+
     -- The UI counts as open only while the menu frame AND its ScreenGui are shown
     -- (scripts may hide it via ScreenGui.Enabled). While open the real cursor is
     -- forced off every frame (games re-enable it); on close the game's own
@@ -3770,6 +4193,7 @@ ThemeMap = {BackgroundColor3 = "AccentColor"}
             and ScreenGui.Enabled and MainFrame.Visible
     end
     local function RefreshCursor(dt)
+        FpsUpdate(ScreenGui.Parent ~= nil and ScreenGui.Enabled and MainFrame.Visible)
         local open = UIOpen()
         if open and not cursorActive then
             savedIcon = UserInputService.MouseIconEnabled
@@ -3792,6 +4216,8 @@ ThemeMap = {BackgroundColor3 = "AccentColor"}
     table.insert(Library.Connections, RunService.RenderStepped:Connect(RefreshCursor))
     table.insert(Library.Connections, { Connected = true, Disconnect = function(self)
         self.Connected = false
+        FpsUpdate(false)
+        pcall(function() RunService:UnbindFromRenderStep(FREEZE_NAME) end)
         if cursorActive then UserInputService.MouseIconEnabled = savedIcon end
         if CursorGui then CursorGui:Destroy() end
     end })
@@ -3867,7 +4293,7 @@ ThemeMap = {BackgroundColor3 = "AccentColor"}
 
         local MenuGroup = SettingsTab:CreateGroupBox("Left", "Menu")
         Library.SettingsMenuGroup = MenuGroup
-        MenuGroup:AddKeybind("Menu Toggle", Enum.KeyCode.End, nil, "__MenuKey")
+        MenuGroup:AddKeybind("Menu Toggle", Enum.KeyCode.Insert, nil, "__MenuKey")
         TrackInput(UserInputService.InputBegan, function(input, processed)
             if processed or input.UserInputType ~= Enum.UserInputType.Keyboard then return end
             local bind = Library.Options.__MenuKey
@@ -3876,6 +4302,8 @@ ThemeMap = {BackgroundColor3 = "AccentColor"}
             end
         end)
         MenuGroup:AddToggle("Custom Cursor", true, function(v) WindowObj:SetCursorEnabled(v) end, "__CustomCursor")
+        MenuGroup:AddToggle("Unlock Mouse (FPS)", true, function(v) Library.MouseOptions.Unlock = v end, "__UnlockMouse")
+        MenuGroup:AddToggle("Freeze Camera (FPS)", true, function(v) Library.MouseOptions.Freeze = v end, "__FreezeCamera")
         MenuGroup:AddToggle("Show Watermark", true, function(v)
             WindowObj:SetWatermark(v and (Title .. " | Running") or "")
         end, "__ShowWatermark")
@@ -4039,6 +4467,20 @@ ThemeMap = {BackgroundColor3 = "AccentColor"}
         CursorGroup:AddToggle("Rainbow", false, function(v) CurCfg.Rainbow = v end, "__CursorRainbow")
         CursorGroup:AddToggle("Spin", false, function(v) CurCfg.Spin = v end, "__CursorSpin")
         CursorGroup:AddToggle("Trail", false, function(v) CurCfg.Trail = v end, "__CursorTrail")
+
+        -- Themes + Configuration are part of the UI itself; nothing to wire up.
+        Library:SetFolder(options.Folder or Title)
+        ThemeManager:_BuildSection(SettingsTab)
+        SaveManager:_BuildSection(SettingsTab)
+        Library.NativeSettings = true
+        if options.AutoLoad ~= false then
+            -- Deferred so the script has finished adding its own options first.
+            task.defer(function()
+                if Library.Unloading or not Library.ScreenGui then return end
+                ThemeManager:LoadDefaultTheme()
+                SaveManager:LoadAutoloadConfig()
+            end)
+        end
     end
 
     -- Handy globals so an executor / MCP session can reach the UI after load.
