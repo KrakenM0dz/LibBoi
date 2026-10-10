@@ -2915,7 +2915,8 @@ end
 function ThemeManager:LoadDefaultTheme()
     if not readfile then return end
     local ok, content = pcall(readfile, self.Folder .. "/themes/default.txt")
-    if not (ok and content ~= "") then return end
+    -- readfile on a missing file returns nil (not an error) on some executors
+    if not (ok and type(content) == "string" and content ~= "") then return end
     if self.BuiltInThemes[content] then
         self:ApplyTheme(content)
         local dd = Library.Options.ThemeManager_ThemeList
@@ -3047,7 +3048,7 @@ end
 function SaveManager:LoadAutoloadConfig()
     if not readfile then return end
     local ok, content = pcall(readfile, self.Folder .. "/autoload.txt")
-    if ok and content ~= "" then self:Load(content) end
+    if ok and type(content) == "string" and content ~= "" then self:Load(content) end
 end
 
 function SaveManager:_RefreshUI()
@@ -3056,7 +3057,7 @@ function SaveManager:_RefreshUI()
         local text = "none"
         if readfile then
             local ok, content = pcall(readfile, self.Folder .. "/autoload.txt")
-            if ok and content ~= "" then text = content end
+            if ok and type(content) == "string" and content ~= "" then text = content end
         end
         self._autoLabel:SetText("Autoload config: " .. text)
     end
