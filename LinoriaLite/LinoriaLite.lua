@@ -149,6 +149,9 @@ end
 
 local function ProtectGui(gui)
     if Library.Protect.RandomName then gui.Name = RandomString(math.random(10, 20)) end
+    -- Draw above Roblox's own menus: OnTopOfCoreBlur lifts the GUI over the escape
+    -- menu's dim/blur, and DisplayOrder keeps it above other GUIs (set by the caller).
+    pcall(function() gui.OnTopOfCoreBlur = true end)
     local env = getgenv and getgenv() or _G
     local parent
     if Library.Protect.UseHui then
@@ -966,15 +969,30 @@ local function BindElementMethods(Obj, ElementContainer, WindowObj)
             Text = text,
             TextColor3 = Library.Theme.TextColor,
             TextSize = 12,
+            TextWrapped = true,
             TextXAlignment = Enum.TextXAlignment.Left,
+            TextYAlignment = Enum.TextYAlignment.Top,
 ThemeMap = {TextColor3 = "TextColor"}
         })
+
+        -- Long text wraps and the row grows to fit it instead of running past the
+        -- group box. Width is 0 while a tab is hidden, so it re-runs when that changes.
+        local function Resize()
+            local w = LabelFrame.AbsoluteSize.X
+            if w <= 0 then return end
+            local b = TextService:GetTextSize(Label.Text, 12, Library.Theme.Font, Vector2.new(w, 9999))
+            LabelFrame.Size = UDim2.new(1, 0, 0, math.max(14, b.Y + 2))
+        end
+        LabelFrame:GetPropertyChangedSignal("AbsoluteSize"):Connect(Resize)
+        Resize()
+
         -- Accepts both `label:SetText(s)` and `label.SetText(s)`; hub scripts use both.
         local LabelObj
         LabelObj = {
             SetText = function(a, b)
                 local newText = (a == LabelObj) and b or a
                 Label.Text = tostring(newText == nil and "" or newText)
+                Resize()
             end
         }
         return LabelObj
@@ -2768,6 +2786,7 @@ function Library:CreateWindow(options)
     local ScreenGui = Create("ScreenGui", {
         Name = "LinoriaLiteGui",
         ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+        DisplayOrder = 2147482500,
         ResetOnSpawn = false
     })
     Library.ScreenGui = ScreenGui
@@ -2779,7 +2798,7 @@ function Library:CreateWindow(options)
     -- stay on screen when the menu is closed; closing the menu only disables ScreenGui.
     local HudGui = Create("ScreenGui", {
         Name = "LinoriaLiteHud", ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
-        ResetOnSpawn = false, DisplayOrder = 10
+        ResetOnSpawn = false, DisplayOrder = 2147482400
     })
     ProtectGui(HudGui)
     Library.HudGui = HudGui
