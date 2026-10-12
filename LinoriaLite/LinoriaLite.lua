@@ -2832,6 +2832,15 @@ local function EnsureFolders(folder, sub)
     end)
 end
 
+-- Only allow a single filename component in config/theme APIs.
+local function SafeStorageName(value)
+    if type(value) ~= "string" then return nil end
+    local name = value:match("^%s*(.-)%s*$")
+    if name == "" or #name > 48 or name == "." or name == ".." then return nil end
+    if name:find("[^%w _%-]") then return nil end
+    return name
+end
+
 -- ---- themes ---------------------------------------------------------------
 -- Accepts a built-in name ("Nord"), {order, data}, or a plain colour table.
 function ThemeManager:ApplyTheme(theme)
@@ -2889,7 +2898,8 @@ function ThemeManager:RefreshCustomThemes()
 end
 
 function ThemeManager:SaveCustomTheme(name)
-    if not writefile then return false end
+    name = SafeStorageName(name)
+    if not name or not writefile then return false end
     EnsureFolders(self.Folder, "themes")
     local t = Library.Theme
     local ok, encoded = pcall(function()
@@ -2904,7 +2914,8 @@ function ThemeManager:SaveCustomTheme(name)
 end
 
 function ThemeManager:LoadCustomTheme(name)
-    if not readfile then return false end
+    name = SafeStorageName(name)
+    if not name or not readfile then return false end
     local ok, content = pcall(readfile, self.Folder .. "/themes/" .. name .. ".json")
     if not ok then return false end
     local okj, data = pcall(function() return HttpService:JSONDecode(content) end)
@@ -3001,11 +3012,13 @@ SaveManager:SetIgnoreIndexes({
     "ThemeManager_OutlineColor", "ThemeManager_TextColor", "ThemeManager_ThemeList",
     "ThemeManager_CustomThemeName", "ThemeManager_CustomThemeList",
     "SaveManager_ConfigName", "SaveManager_ConfigList",
+    "__SettingsSearch",
 })
 function SaveManager:IgnoreThemeSettings() end   -- already ignored; kept for old scripts
 
 function SaveManager:Save(name)
-    if not writefile or not name or name == "" then return false end
+    name = SafeStorageName(name)
+    if not writefile or not name then return false end
     EnsureFolders(self.Folder)
     local data = {}
     for idx, obj in pairs(Library.Options) do
@@ -3019,7 +3032,8 @@ function SaveManager:Save(name)
 end
 
 function SaveManager:Load(name)
-    if not readfile then return false end
+    name = SafeStorageName(name)
+    if not name or not readfile then return false end
     local ok, content = pcall(readfile, self.Folder .. "/" .. name .. ".json")
     if not ok then return false end
     local okj, data = pcall(function() return HttpService:JSONDecode(content) end)
@@ -3048,7 +3062,8 @@ end
 function SaveManager:LoadAutoloadConfig()
     if not readfile then return end
     local ok, content = pcall(readfile, self.Folder .. "/autoload.txt")
-    if ok and type(content) == "string" and content ~= "" then self:Load(content) end
+    local name = ok and type(content) == "string" and SafeStorageName(content)
+    if name then self:Load(name) end
 end
 
 function SaveManager:_RefreshUI()
@@ -3088,7 +3103,7 @@ function SaveManager:_BuildSection(Tab)
         if name and name ~= "" and self:Save(name) then Library:Notify("Overwrote config: " .. name) end
     end)
     G:AddButton("Delete config", function()
-        local name = self._cfgList.Value
+        local name = SafeStorageName(self._cfgList.Value)
         local path = name and (self.Folder .. "/" .. name .. ".json")
         if path and isfile and delfile and isfile(path) then
             pcall(delfile, path)
@@ -3101,7 +3116,7 @@ function SaveManager:_BuildSection(Tab)
 
     self._autoLabel = G:AddLabel("Autoload config: none")
     G:AddButton("Set as autoload", function()
-        local name = self._cfgList.Value
+        local name = SafeStorageName(self._cfgList.Value)
         if name and name ~= "" and writefile then
             EnsureFolders(self.Folder)
             pcall(writefile, self.Folder .. "/autoload.txt", name)
@@ -3120,13 +3135,14 @@ end
 
 -- One call moves both managers (and refreshes their lists) to a new folder.
 function Library:SetFolder(name)
-    name = tostring(name or ""):gsub("[^%w_%- ]", "")
-    if name == "" then return end
+    name = SafeStorageName(tostring(name or ""))
+    if not name then return false end
     ThemeManager.Folder, SaveManager.Folder = name, name
     pcall(function() SaveManager:_RefreshUI() end)
     pcall(function()
         if ThemeManager._customList then ThemeManager._customList:RefreshOptions(ThemeManager:RefreshCustomThemes()) end
     end)
+    return true
 end
 
 function Library:CreateWindow(options)
@@ -3141,6 +3157,42 @@ function Library:CreateWindow(options)
         Tabs = {},
         CurrentTab = nil
     }
+    local SettingsGroups = {}
+    local SettingsSearchGroup
+    local function ApplySettingsSearch(query)
+        query = tostring(query or ""):lower():match("^%s*(.-)%s*$")
+        Library.SettingsSearchQuery = query
+        for _, group in ipairs(SettingsGroups) do
+            if group.Outline ~= SettingsSearchGroup then
+                local groupTitle = group.Title:lower()
+                local titleMatches = query == "" or groupTitle:find(query, 1, true) ~= nil
+                local anyMatch = titleMatches
+                for _, row in ipairs(group.Container:GetChildren()) do
+                    if row:IsA("GuiObject") then
+                        local rowMatch = titleMatches or query == ""
+                        local searchable = {row.Name}
+                        for _, item in ipairs(row:GetDescendants()) do
+                            if item:IsA("TextLabel") or item:IsA("TextButton") or item:IsA("TextBox") then
+                                searchable[#searchable + 1] = item.Text or ""
+                                if item:IsA("TextBox") then searchable[#searchable + 1] = item.PlaceholderText end
+                            end
+                        end
+                        if not rowMatch then
+                            local joined = table.concat(searchable, " "):lower()
+                            rowMatch = joined:find(query, 1, true) ~= nil
+                        end
+                        row.Visible = rowMatch
+                        anyMatch = anyMatch or rowMatch
+                    end
+                end
+                group.Outline.Visible = query == "" or anyMatch
+            end
+        end
+    end
+    function Library:SearchSettings(query)
+        ApplySettingsSearch(query)
+        return true
+    end
 
     local ScreenGui = Create("ScreenGui", {
         Name = "LinoriaLiteGui",
@@ -3667,6 +3719,7 @@ ThemeMap = {TextColor3 = "TextMuted"}
                 BorderSizePixel = 0,
 ThemeMap = {BackgroundColor3 = "OutlineColor"}
             })
+            GroupObj.Frame = GroupBoxOutline
             local GroupInline = Create("Frame", {
                 Parent = GroupBoxOutline,
                 BackgroundColor3 = Library.Theme.InlineColor,
@@ -3721,6 +3774,10 @@ ThemeMap = {BackgroundColor3 = "MainColor", TextColor3 = "TextColor"}
                 PaddingTop = UDim.new(0, 2),
                 PaddingBottom = UDim.new(0, 8)
             })
+
+            if Library.SettingsTab == TabObj then
+                table.insert(SettingsGroups, {Outline = GroupBoxOutline, Container = ElementContainer, Title = tostring(groupName)})
+            end
 
             local function UpdateSize()
                 GroupBoxOutline.Size = UDim2.new(1, 0, 0, 10 + ContainerLayout.AbsoluteContentSize.Y + 12)
@@ -4294,6 +4351,11 @@ ThemeMap = {BackgroundColor3 = "AccentColor"}
 
         local MenuGroup = SettingsTab:CreateGroupBox("Left", "Menu")
         Library.SettingsMenuGroup = MenuGroup
+        local SearchGroup = SettingsTab:CreateGroupBox("Right", "Find setting")
+        SettingsSearchGroup = SearchGroup.Frame
+        SearchGroup:AddInput("Search Settings", "", function(query)
+            ApplySettingsSearch(query)
+        end, "__SettingsSearch")
         MenuGroup:AddKeybind("Menu Toggle", Enum.KeyCode.Insert, nil, "__MenuKey")
         TrackInput(UserInputService.InputBegan, function(input, processed)
             if processed or input.UserInputType ~= Enum.UserInputType.Keyboard then return end
@@ -4483,6 +4545,27 @@ ThemeMap = {BackgroundColor3 = "AccentColor"}
             end)
         end
     end
+
+    -- Snapshot UI-owned options after they are all constructed; Reset UI Settings
+    -- restores these through each control's loader, so normal callbacks also run.
+    Library.UISettingDefaults = {}
+    for idx, obj in pairs(Library.Options) do
+        if tostring(idx):sub(1, 2) == "__" and type(obj.Save) == "function" then
+            local ok, value = pcall(function() return obj:Save() end)
+            if ok then Library.UISettingDefaults[idx] = value end
+        end
+    end
+    MenuGroup:AddButton("Reset UI settings", function()
+    Library.SettingsMenuGroup:AddButton("Reset UI settings", function()
+        for idx, value in pairs(Library.UISettingDefaults) do
+            local obj = Library.Options[idx]
+            if obj and type(obj.Load) == "function" then
+                pcall(function() obj:Load(value) end)
+            end
+        end
+        WindowObj:ResetOverlays()
+        Library:Notify("UI settings restored")
+    end)
 
     -- Handy globals so an executor / MCP session can reach the UI after load.
     local env = (getgenv and getgenv()) or _G
