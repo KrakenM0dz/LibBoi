@@ -12,21 +12,40 @@ ThemeManager.BuiltInThemes = {
     ['Mint']            = { 5, HttpService:JSONDecode('{"FontColor":"ffffff","MainColor":"242424","AccentColor":"3db488","BackgroundColor":"1c1c1c","OutlineColor":"373737"}') },
     ['Tokyo Night']     = { 6, HttpService:JSONDecode('{"FontColor":"ffffff","MainColor":"191925","AccentColor":"6759b3","BackgroundColor":"16161f","OutlineColor":"323232"}') },
     ['Ubuntu']          = { 7, HttpService:JSONDecode('{"FontColor":"ffffff","MainColor":"3e3e3e","AccentColor":"e2581e","BackgroundColor":"323232","OutlineColor":"191919"}') },
-    ['Quartz']          = { 8, HttpService:JSONDecode('{"FontColor":"ffffff","MainColor":"232330","AccentColor":"426e87","BackgroundColor":"1d1b26","OutlineColor":"27232f"}') }
+    ['Quartz']          = { 8, HttpService:JSONDecode('{"FontColor":"ffffff","MainColor":"232330","AccentColor":"426e87","BackgroundColor":"1d1b26","OutlineColor":"27232f"}') },
+    ['Midnight'] = { 9, HttpService:JSONDecode('{"FontColor":"ffffff","MainColor":"14161f","AccentColor":"4f8cff","BackgroundColor":"0e1017","OutlineColor":"262a38"}') },
+    ['Crimson'] = { 10, HttpService:JSONDecode('{"FontColor":"ffffff","MainColor":"1d1416","AccentColor":"e0283c","BackgroundColor":"150e10","OutlineColor":"3a2226"}') },
+    ['Sakura'] = { 11, HttpService:JSONDecode('{"FontColor":"ffffff","MainColor":"24181e","AccentColor":"ff7eb6","BackgroundColor":"1a1116","OutlineColor":"3d2832"}') },
+    ['Dracula'] = { 12, HttpService:JSONDecode('{"FontColor":"ffffff","MainColor":"282a36","AccentColor":"bd93f9","BackgroundColor":"21222c","OutlineColor":"44475a"}') },
+    ['Nord'] = { 13, HttpService:JSONDecode('{"FontColor":"ffffff","MainColor":"2e3440","AccentColor":"88c0d0","BackgroundColor":"262b35","OutlineColor":"434c5e"}') },
+    ['Gold'] = { 14, HttpService:JSONDecode('{"FontColor":"ffffff","MainColor":"1e1b14","AccentColor":"f5b83d","BackgroundColor":"15130e","OutlineColor":"3a3524"}') },
+    ['Toxic'] = { 15, HttpService:JSONDecode('{"FontColor":"ffffff","MainColor":"16201a","AccentColor":"7dff3a","BackgroundColor":"0f1612","OutlineColor":"27382c"}') },
+    ['Ocean'] = { 16, HttpService:JSONDecode('{"FontColor":"ffffff","MainColor":"10202b","AccentColor":"1fc8e0","BackgroundColor":"0b1720","OutlineColor":"1f3a4a"}') }
 }
+
+local function SafeName(value)
+    if type(value) ~= "string" then return nil end
+    local name = value:match("^%s*(.-)%s*$")
+    if name == "" or #name > 48 or name == "." or name == ".." or name:find("[^%w _%-]") then return nil end
+    return name
+end
 
 function ThemeManager:SetLibrary(lib)
     self.Library = lib
 end
 
 function ThemeManager:SetFolder(folderName)
+    folderName = SafeName(folderName)
+    if not folderName then return false end
     self.Folder = folderName
+    if self.Library and self.Library.SetFolder then self.Library:SetFolder(folderName) end
     if isfolder and not isfolder(self.Folder) then
         makefolder(self.Folder)
     end
     if isfolder and not isfolder(self.Folder .. "/themes") then
         makefolder(self.Folder .. "/themes")
     end
+    return true
 end
 
 -- Safely converts a hex string to a Color3
@@ -125,6 +144,8 @@ function ThemeManager:RefreshCustomThemes()
 end
 
 function ThemeManager:SaveCustomTheme(name)
+    name = SafeName(name)
+    if not name then return false end
     if not writefile then return false end
     
     local themeData = {
@@ -144,6 +165,8 @@ function ThemeManager:SaveCustomTheme(name)
 end
 
 function ThemeManager:LoadCustomTheme(name)
+    name = SafeName(name)
+    if not name then return false end
     if not readfile then return false end
     
     local success, content = pcall(readfile, self.Folder .. "/themes/" .. name .. ".json")
