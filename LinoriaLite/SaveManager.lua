@@ -5,15 +5,26 @@ SaveManager.Folder = "LinoriaLiteSettings"
 SaveManager.Library = nil
 SaveManager.Ignore = {}
 
+local function SafeName(value)
+    if type(value) ~= "string" then return nil end
+    local name = value:match("^%s*(.-)%s*$")
+    if name == "" or #name > 48 or name == "." or name == ".." or name:find("[^%w _%-]") then return nil end
+    return name
+end
+
 function SaveManager:SetLibrary(lib)
     self.Library = lib
 end
 
 function SaveManager:SetFolder(folderName)
+    folderName = SafeName(folderName)
+    if not folderName then return false end
     self.Folder = folderName
+    if self.Library and self.Library.SetFolder then self.Library:SetFolder(folderName) end
     if isfolder and not isfolder(self.Folder) then
         makefolder(self.Folder)
     end
+    return true
 end
 
 function SaveManager:SetIgnoreIndexes(list)
@@ -41,7 +52,8 @@ function SaveManager:CheckFolder()
 end
 
 function SaveManager:Save(name)
-    if not writefile then return false end
+    name = SafeName(name)
+    if not writefile or not name then return false end
     self:CheckFolder()
     
     local data = {}
@@ -62,7 +74,8 @@ function SaveManager:Save(name)
 end
 
 function SaveManager:Load(name)
-    if not readfile then return false end
+    name = SafeName(name)
+    if not readfile or not name then return false end
     local path = self.Folder .. "/" .. name .. ".json"
     
     local success, content = pcall(readfile, path)
@@ -126,7 +139,7 @@ function SaveManager:BuildConfigSection(Tab)
     local cfgList = ConfigGroup:AddDropdown("Config list", self:RefreshConfigList(), nil, function() end, "SaveManager_ConfigList")
     
     ConfigGroup:AddButton("Create config", function()
-        local name = cfgName.Value
+        local name = SafeName(cfgName.Value)
         if name and name ~= "" then
             self:Save(name)
             cfgList:RefreshOptions(self:RefreshConfigList())
@@ -136,7 +149,7 @@ function SaveManager:BuildConfigSection(Tab)
     end)
     
     ConfigGroup:AddButton("Load config", function()
-        local name = cfgList.Value
+        local name = SafeName(cfgList.Value)
         if name and name ~= "" then
             if self:Load(name) then
                 self.Library:Notify("Loaded config: " .. name)
@@ -147,7 +160,7 @@ function SaveManager:BuildConfigSection(Tab)
     end)
     
     ConfigGroup:AddButton("Overwrite config", function()
-        local name = cfgList.Value
+        local name = SafeName(cfgList.Value)
         if name and name ~= "" then
             self:Save(name)
             self.Library:Notify("Overwrote config: " .. name)
@@ -155,7 +168,7 @@ function SaveManager:BuildConfigSection(Tab)
     end)
     
     ConfigGroup:AddButton("Delete config", function()
-        local name = cfgList.Value
+        local name = SafeName(cfgList.Value)
         if name and name ~= "" then
             local path = self.Folder .. "/" .. name .. ".json"
             if isfile and isfile(path) and delfile then
@@ -180,7 +193,7 @@ function SaveManager:BuildConfigSection(Tab)
     end
     
     ConfigGroup:AddButton("Set as autoload", function()
-        local name = cfgList.Value
+        local name = SafeName(cfgList.Value)
         if name and name ~= "" and writefile then
             writefile(self.Folder .. "/autoload.txt", name)
             autoLabel:SetText("Current autoload config: " .. name)
