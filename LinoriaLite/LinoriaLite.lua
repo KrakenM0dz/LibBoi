@@ -4030,6 +4030,7 @@ ThemeMap = {BackgroundColor3 = "AccentColor"}
     local Cur = {
         Style = "Arrow", Size = 16, Color = Color3.fromRGB(255, 255, 255),
         UseAccent = true, Rainbow = false, Trail = false, Spin = false,
+        UseAccent = false, Rainbow = false, Trail = false, Spin = false,
     }
     Library.Cursor = Cur
     local BLACK = Color3.new(0, 0, 0)
@@ -4058,13 +4059,27 @@ ThemeMap = {BackgroundColor3 = "AccentColor"}
     -- Arrow: Roblox's own pointer image (white fill, black outline), tinted with the
     -- UI colour so it reads as a normal cursor that matches the theme. The glyph's
     -- tip sits at the image centre, so centring the image on the mouse is the hotspot.
+    -- Arrow: layer Roblox's standard pointer over a subtle shadow. The source sprite
+    -- has transparent padding, so the anchor targets the visible arrow tip and the
+    -- label is scaled up enough to remain legible at normal UI scale.
     local ArrowC = Container("Arrow")
+    local ArrowShadow = Create("ImageLabel", {
+        Parent = ArrowC, BackgroundTransparency = 1, BorderSizePixel = 0,
+        AnchorPoint = Vector2.new(0.36, 0.20), Position = UDim2.new(0, 2, 0, 2),
+        Size = UDim2.new(0, 96, 0, 96), ZIndex = 100000,
+        Image = "rbxasset://textures/Cursors/KeyboardMouse/ArrowCursor.png",
+        ImageColor3 = Color3.new(0, 0, 0), ImageTransparency = 0.18,
+    })
     local ArrowImg = Create("ImageLabel", {
         Parent = ArrowC, BackgroundTransparency = 1, BorderSizePixel = 0,
         AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0, 0, 0, 0),
         Size = UDim2.new(0, 48, 0, 48), ZIndex = 100001,
         Image = "rbxasset://textures/Cursors/KeyboardMouse/ArrowFarCursor.png",
         ImageColor3 = Library.Theme.AccentColor,
+        AnchorPoint = Vector2.new(0.36, 0.20), Position = UDim2.new(0, 0, 0, 0),
+        Size = UDim2.new(0, 96, 0, 96), ZIndex = 100001,
+        Image = "rbxasset://textures/Cursors/KeyboardMouse/ArrowCursor.png",
+        ImageColor3 = Cur.Color,
     })
 
     -- Ring: halo + coloured ring + centre dot
@@ -4130,9 +4145,13 @@ ThemeMap = {BackgroundColor3 = "AccentColor"}
 
         if Cur.Style == "Arrow" then
             local px = math.max(16, math.floor(sz * 3))
+            local px = math.max(42, math.floor(sz * 6))
             SetSize(ArrowImg, px)
+            SetSize(ArrowShadow, px + 3)
             ArrowImg.ImageColor3 = color
             ArrowC.Rotation = angle
+            ArrowShadow.Position = UDim2.new(0, 2, 0, 2)
+            ArrowC.Rotation = 0 -- a pointer stays upright even when Spin is enabled
         elseif Cur.Style == "Ring" then
             SetSize(RingHalo, sz + 4); SetSize(RingRing, sz); SetSize(RingDotBg, 8); SetSize(RingDot, 4)
             RingStroke.Color = color; RingDot.BackgroundColor3 = color
@@ -4526,6 +4545,7 @@ ThemeMap = {BackgroundColor3 = "AccentColor"}
         CursorGroup:AddDropdown("Cursor Style", Library.CursorStyles, CurCfg.Style, function(v) CurCfg.Style = v end, "__CursorStyle")
         CursorGroup:AddSlider("Cursor Size", 6, 40, CurCfg.Size, function(v) CurCfg.Size = v end, "__CursorSize")
         CursorGroup:AddToggle("Use Accent Color", true, function(v) CurCfg.UseAccent = v end, "__CursorAccent")
+        CursorGroup:AddToggle("Use Accent Color", false, function(v) CurCfg.UseAccent = v end, "__CursorAccent")
         CursorGroup:AddColorPicker("Cursor Color", CurCfg.Color, function(c) CurCfg.Color = c end, "__CursorColor")
         CursorGroup:AddToggle("Rainbow", false, function(v) CurCfg.Rainbow = v end, "__CursorRainbow")
         CursorGroup:AddToggle("Spin", false, function(v) CurCfg.Spin = v end, "__CursorSpin")
