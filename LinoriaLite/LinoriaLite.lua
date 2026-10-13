@@ -4045,15 +4045,8 @@ ThemeMap = {BackgroundColor3 = "AccentColor"}
     local CURSOR_TIP_X, CURSOR_TIP_Y = 0, 0
     local CURSOR_OUTLINE = Color3.fromRGB(20, 14, 27)
     local TriangleRows = {}
-    for y = 0, 16 do
-        local scanY, intersections = y + 0.5, {}
-        for i = 1, #TRIANGLE do
-            local a, b = TRIANGLE[i], TRIANGLE[i % #TRIANGLE + 1]
-            if (a.y <= scanY and scanY < b.y) or (b.y <= scanY and scanY < a.y) then
-                intersections[#intersections + 1] = a.x + (scanY - a.y) * (b.x - a.x) / (b.y - a.y)
-            end
-        end
-        local left, right = math.min(intersections[1], intersections[2]), math.max(intersections[1], intersections[2])
+    local MAX_CURSOR_ROWS = math.ceil(17 * 40 / 16) + 1
+    for _ = 1, MAX_CURSOR_ROWS do
         local outline = Create("Frame", {
             Parent = CursorRoot, BackgroundColor3 = CURSOR_OUTLINE, BorderSizePixel = 0,
             ZIndex = 100000,
@@ -4069,7 +4062,7 @@ ThemeMap = {BackgroundColor3 = "AccentColor"}
             Parent = CursorRoot, BackgroundColor3 = Cur.Color, BorderSizePixel = 0,
             ZIndex = 100001,
         })
-        TriangleRows[#TriangleRows + 1] = {Y = y, Left = left, Right = right, Outline = outline, Fill = fill}
+        TriangleRows[#TriangleRows + 1] = {Outline = outline, Fill = fill}
     end
     local function Container(name)
         return Create("Frame", {
@@ -4184,17 +4177,6 @@ ThemeMap = {BackgroundColor3 = "AccentColor"}
                 Arms[n].Position = UDim2.new(0, d[1] * off, 0, d[2] * off)
                 ArmsBack[n].Size = UDim2.new(0, w + 2, 0, h + 2)
                 ArmsBack[n].Position = Arms[n].Position
-        local scale = math.max(0.35, Cur.Size / 16) * pressScale
-        for _, row in ipairs(TriangleRows) do
-            local outerLeft, outerRight = math.floor(row.Left) - 1, math.ceil(row.Right) + 1
-            row.Outline.Position = UDim2.new(0, (outerLeft - CURSOR_TIP_X) * scale, 0, (row.Y - CURSOR_TIP_Y) * scale)
-            row.Outline.Size = UDim2.new(0, (outerRight - outerLeft) * scale, 0, math.max(1, 1.25 * scale))
-            local innerLeft, innerRight = math.ceil(row.Left + 1), math.floor(row.Right - 1)
-            row.Fill.Visible = innerRight > innerLeft
-            if row.Fill.Visible then
-                row.Fill.Position = UDim2.new(0, (innerLeft - CURSOR_TIP_X) * scale, 0, (row.Y - CURSOR_TIP_Y) * scale)
-                row.Fill.Size = UDim2.new(0, (innerRight - innerLeft) * scale, 0, math.max(1, 0.9 * scale))
-                row.Fill.BackgroundColor3 = color
             end
             SetSize(CrossDot, 2); CrossDot.BackgroundColor3 = color
             CrossC.Rotation = angle
@@ -4218,7 +4200,38 @@ ThemeMap = {BackgroundColor3 = "AccentColor"}
                     SetSize(t, math.max(2, (Cur.Size * 0.4) * (1 - n / (TRAIL_N + 2))))
                     t.BackgroundColor3 = color
                     t.BackgroundTransparency = 0.35 + 0.6 * (n / TRAIL_N)
+        local scale = math.max(0.35, Cur.Size / 16) * pressScale
+        local renderedHeight = 17 * scale
+        -- UDim2 pixel offsets are rounded to integers; one-pixel rows avoid the
+        -- transparent horizontal seams caused by fractional row heights.
+        local rowCount = math.min(#TriangleRows, math.max(1, math.floor(renderedHeight + 0.5)))
+        for rowIndex, row in ipairs(TriangleRows) do
+            if rowIndex <= rowCount then
+                local scanY = (rowIndex - 0.5) / scale
+                local intersections = {}
+                for i = 1, #TRIANGLE do
+                    local a, b = TRIANGLE[i], TRIANGLE[i % #TRIANGLE + 1]
+                    if (a.y <= scanY and scanY < b.y) or (b.y <= scanY and scanY < a.y) then
+                        intersections[#intersections + 1] = a.x + (scanY - a.y) * (b.x - a.x) / (b.y - a.y)
+                    end
                 end
+                local left = math.min(intersections[1], intersections[2]) * scale
+                local right = math.max(intersections[1], intersections[2]) * scale
+                local y = rowIndex - 1
+                local outerLeft, outerRight = math.floor(left) - 1, math.ceil(right) + 1
+                row.Outline.Visible = true
+                row.Outline.Position = UDim2.new(0, outerLeft - CURSOR_TIP_X * scale, 0, y - CURSOR_TIP_Y * scale)
+                row.Outline.Size = UDim2.new(0, outerRight - outerLeft, 0, 1)
+                local innerLeft, innerRight = math.ceil(left + 1), math.floor(right - 1)
+                row.Fill.Visible = innerRight > innerLeft
+                if row.Fill.Visible then
+                    row.Fill.Position = UDim2.new(0, innerLeft - CURSOR_TIP_X * scale, 0, y - CURSOR_TIP_Y * scale)
+                    row.Fill.Size = UDim2.new(0, innerRight - innerLeft, 0, 1)
+                    row.Fill.BackgroundColor3 = color
+                end
+            else
+                row.Outline.Visible = false
+                row.Fill.Visible = false
             end
         elseif #History > 0 then
             table.clear(History)
