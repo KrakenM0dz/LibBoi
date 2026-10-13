@@ -4026,11 +4026,12 @@ ThemeMap = {BackgroundColor3 = "AccentColor"}
     -- Cursor styles. Everything is Frames + UICorner/UIStroke (anti-aliased,
     -- no assets). Library.Cursor holds the live settings; the Settings tab
     -- edits it and UpdateCursor() applies it every frame.
+    -- A compact, outlined triangle cursor matching the Settings preview.
     -- =================================================================
     local Cur = {
         Style = "Arrow", Size = 16, Color = Color3.fromRGB(255, 255, 255),
-        UseAccent = true, Rainbow = false, Trail = false, Spin = false,
         UseAccent = false, Rainbow = false, Trail = false, Spin = false,
+        Size = 16, Color = Color3.fromRGB(158, 65, 181), UseAccent = false,
     }
     Library.Cursor = Cur
     local BLACK = Color3.new(0, 0, 0)
@@ -4039,6 +4040,23 @@ ThemeMap = {BackgroundColor3 = "AccentColor"}
         local f = Create("Frame", {
             Parent = parent, BackgroundTransparency = 1, BorderSizePixel = 0,
             AnchorPoint = Vector2.new(0.5, 0.5), Size = UDim2.new(0, 0, 0, 0), ZIndex = z
+    local TRIANGLE = {{x = 0, y = 0}, {x = 16, y = 6}, {x = 7, y = 17}}
+    -- The sharp upper-left corner is the click hotspot, like a normal pointer.
+    local CURSOR_TIP_X, CURSOR_TIP_Y = 0, 0
+    local CURSOR_OUTLINE = Color3.fromRGB(20, 14, 27)
+    local TriangleRows = {}
+    for y = 0, 16 do
+        local scanY, intersections = y + 0.5, {}
+        for i = 1, #TRIANGLE do
+            local a, b = TRIANGLE[i], TRIANGLE[i % #TRIANGLE + 1]
+            if (a.y <= scanY and scanY < b.y) or (b.y <= scanY and scanY < a.y) then
+                intersections[#intersections + 1] = a.x + (scanY - a.y) * (b.x - a.x) / (b.y - a.y)
+            end
+        end
+        local left, right = math.min(intersections[1], intersections[2]), math.max(intersections[1], intersections[2])
+        local outline = Create("Frame", {
+            Parent = CursorRoot, BackgroundColor3 = CURSOR_OUTLINE, BorderSizePixel = 0,
+            ZIndex = 100000,
         })
         if round then Create("UICorner", {Parent = f, CornerRadius = UDim.new(1, 0)}) end
         return f
@@ -4047,7 +4065,11 @@ ThemeMap = {BackgroundColor3 = "AccentColor"}
         return Create("UIStroke", {
             Parent = f, Thickness = thickness, Color = color or BLACK,
             Transparency = transparency or 0, ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+        local fill = Create("Frame", {
+            Parent = CursorRoot, BackgroundColor3 = Cur.Color, BorderSizePixel = 0,
+            ZIndex = 100001,
         })
+        TriangleRows[#TriangleRows + 1] = {Y = y, Left = left, Right = right, Outline = outline, Fill = fill}
     end
     local function Container(name)
         return Create("Frame", {
@@ -4056,9 +4078,6 @@ ThemeMap = {BackgroundColor3 = "AccentColor"}
         })
     end
 
-    -- Arrow: Roblox's own pointer image (white fill, black outline), tinted with the
-    -- UI colour so it reads as a normal cursor that matches the theme. The glyph's
-    -- tip sits at the image centre, so centring the image on the mouse is the hotspot.
     -- Arrow: layer Roblox's standard pointer over a subtle shadow. The source sprite
     -- has transparent padding, so the anchor targets the visible arrow tip and the
     -- label is scaled up enough to remain legible at normal UI scale.
@@ -4072,10 +4091,6 @@ ThemeMap = {BackgroundColor3 = "AccentColor"}
     })
     local ArrowImg = Create("ImageLabel", {
         Parent = ArrowC, BackgroundTransparency = 1, BorderSizePixel = 0,
-        AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0, 0, 0, 0),
-        Size = UDim2.new(0, 48, 0, 48), ZIndex = 100001,
-        Image = "rbxasset://textures/Cursors/KeyboardMouse/ArrowFarCursor.png",
-        ImageColor3 = Library.Theme.AccentColor,
         AnchorPoint = Vector2.new(0.36, 0.20), Position = UDim2.new(0, 0, 0, 0),
         Size = UDim2.new(0, 96, 0, 96), ZIndex = 100001,
         Image = "rbxasset://textures/Cursors/KeyboardMouse/ArrowCursor.png",
@@ -4122,6 +4137,7 @@ ThemeMap = {BackgroundColor3 = "AccentColor"}
     end
 
     local pressScale, angle, mouseDown = 1, 0, false
+    local pressScale, mouseDown = 1, false
     table.insert(Library.Connections, UserInputService.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 then mouseDown = true end
     end))
@@ -4137,6 +4153,8 @@ ThemeMap = {BackgroundColor3 = "AccentColor"}
         elseif Cur.UseAccent then color = Library.Theme.AccentColor
         else color = Cur.Color end
 
+    local function UpdateCursor(dt)
+        local color = Cur.UseAccent and Library.Theme.AccentColor or Cur.Color
         pressScale = pressScale + ((mouseDown and 0.65 or 1) - pressScale) * math.min(1, dt * 22)
         local sz = Cur.Size * pressScale
         if Cur.Spin then angle = (angle + dt * 160) % 360 else angle = 0 end
@@ -4144,12 +4162,10 @@ ThemeMap = {BackgroundColor3 = "AccentColor"}
         for name, c in pairs(Containers) do c.Visible = (name == Cur.Style) end
 
         if Cur.Style == "Arrow" then
-            local px = math.max(16, math.floor(sz * 3))
             local px = math.max(42, math.floor(sz * 6))
             SetSize(ArrowImg, px)
             SetSize(ArrowShadow, px + 3)
             ArrowImg.ImageColor3 = color
-            ArrowC.Rotation = angle
             ArrowShadow.Position = UDim2.new(0, 2, 0, 2)
             ArrowC.Rotation = 0 -- a pointer stays upright even when Spin is enabled
         elseif Cur.Style == "Ring" then
@@ -4168,6 +4184,17 @@ ThemeMap = {BackgroundColor3 = "AccentColor"}
                 Arms[n].Position = UDim2.new(0, d[1] * off, 0, d[2] * off)
                 ArmsBack[n].Size = UDim2.new(0, w + 2, 0, h + 2)
                 ArmsBack[n].Position = Arms[n].Position
+        local scale = math.max(0.35, Cur.Size / 16) * pressScale
+        for _, row in ipairs(TriangleRows) do
+            local outerLeft, outerRight = math.floor(row.Left) - 1, math.ceil(row.Right) + 1
+            row.Outline.Position = UDim2.new(0, (outerLeft - CURSOR_TIP_X) * scale, 0, (row.Y - CURSOR_TIP_Y) * scale)
+            row.Outline.Size = UDim2.new(0, (outerRight - outerLeft) * scale, 0, math.max(1, 1.25 * scale))
+            local innerLeft, innerRight = math.ceil(row.Left + 1), math.floor(row.Right - 1)
+            row.Fill.Visible = innerRight > innerLeft
+            if row.Fill.Visible then
+                row.Fill.Position = UDim2.new(0, (innerLeft - CURSOR_TIP_X) * scale, 0, (row.Y - CURSOR_TIP_Y) * scale)
+                row.Fill.Size = UDim2.new(0, (innerRight - innerLeft) * scale, 0, math.max(1, 0.9 * scale))
+                row.Fill.BackgroundColor3 = color
             end
             SetSize(CrossDot, 2); CrossDot.BackgroundColor3 = color
             CrossC.Rotation = angle
@@ -4288,6 +4315,7 @@ ThemeMap = {BackgroundColor3 = "AccentColor"}
         else
             for n = 1, TRAIL_N do Trail[n].Visible = false end
             table.clear(History)
+            UpdateCursor(dt or 0.016)
         end
     end
     table.insert(Library.Connections, RunService.RenderStepped:Connect(RefreshCursor))
@@ -4544,7 +4572,6 @@ ThemeMap = {BackgroundColor3 = "AccentColor"}
         local CurCfg = Library.Cursor
         CursorGroup:AddDropdown("Cursor Style", Library.CursorStyles, CurCfg.Style, function(v) CurCfg.Style = v end, "__CursorStyle")
         CursorGroup:AddSlider("Cursor Size", 6, 40, CurCfg.Size, function(v) CurCfg.Size = v end, "__CursorSize")
-        CursorGroup:AddToggle("Use Accent Color", true, function(v) CurCfg.UseAccent = v end, "__CursorAccent")
         CursorGroup:AddToggle("Use Accent Color", false, function(v) CurCfg.UseAccent = v end, "__CursorAccent")
         CursorGroup:AddColorPicker("Cursor Color", CurCfg.Color, function(c) CurCfg.Color = c end, "__CursorColor")
         CursorGroup:AddToggle("Rainbow", false, function(v) CurCfg.Rainbow = v end, "__CursorRainbow")
@@ -4575,7 +4602,6 @@ ThemeMap = {BackgroundColor3 = "AccentColor"}
             if ok then Library.UISettingDefaults[idx] = value end
         end
     end
-    MenuGroup:AddButton("Reset UI settings", function()
     Library.SettingsMenuGroup:AddButton("Reset UI settings", function()
         for idx, value in pairs(Library.UISettingDefaults) do
             local obj = Library.Options[idx]
