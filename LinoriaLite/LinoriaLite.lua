@@ -4023,23 +4023,12 @@ ThemeMap = {BackgroundColor3 = "AccentColor"}
         Size = UDim2.new(0, 0, 0, 0), ZIndex = 100000
     })
     -- =================================================================
-    -- Cursor styles. Everything is Frames + UICorner/UIStroke (anti-aliased,
-    -- no assets). Library.Cursor holds the live settings; the Settings tab
-    -- edits it and UpdateCursor() applies it every frame.
     -- A compact, outlined triangle cursor matching the Settings preview.
     -- =================================================================
     local Cur = {
-        Style = "Arrow", Size = 16, Color = Color3.fromRGB(255, 255, 255),
-        UseAccent = false, Rainbow = false, Trail = false, Spin = false,
         Size = 16, Color = Color3.fromRGB(158, 65, 181), UseAccent = false,
     }
     Library.Cursor = Cur
-    local BLACK = Color3.new(0, 0, 0)
-
-    local function Box(parent, z, round)
-        local f = Create("Frame", {
-            Parent = parent, BackgroundTransparency = 1, BorderSizePixel = 0,
-            AnchorPoint = Vector2.new(0.5, 0.5), Size = UDim2.new(0, 0, 0, 0), ZIndex = z
     local TRIANGLE = {{x = 0, y = 0}, {x = 16, y = 6}, {x = 7, y = 17}}
     -- The sharp upper-left corner is the click hotspot, like a normal pointer.
     local CURSOR_TIP_X, CURSOR_TIP_Y = 0, 0
@@ -4051,85 +4040,13 @@ ThemeMap = {BackgroundColor3 = "AccentColor"}
             Parent = CursorRoot, BackgroundColor3 = CURSOR_OUTLINE, BorderSizePixel = 0,
             ZIndex = 100000,
         })
-        if round then Create("UICorner", {Parent = f, CornerRadius = UDim.new(1, 0)}) end
-        return f
-    end
-    local function Outline(f, thickness, color, transparency)
-        return Create("UIStroke", {
-            Parent = f, Thickness = thickness, Color = color or BLACK,
-            Transparency = transparency or 0, ApplyStrokeMode = Enum.ApplyStrokeMode.Border
         local fill = Create("Frame", {
             Parent = CursorRoot, BackgroundColor3 = Cur.Color, BorderSizePixel = 0,
             ZIndex = 100001,
         })
         TriangleRows[#TriangleRows + 1] = {Outline = outline, Fill = fill}
     end
-    local function Container(name)
-        return Create("Frame", {
-            Name = name, Parent = CursorRoot, BackgroundTransparency = 1,
-            Size = UDim2.new(0, 0, 0, 0), Visible = false
-        })
-    end
 
-    -- Arrow: layer Roblox's standard pointer over a subtle shadow. The source sprite
-    -- has transparent padding, so the anchor targets the visible arrow tip and the
-    -- label is scaled up enough to remain legible at normal UI scale.
-    local ArrowC = Container("Arrow")
-    local ArrowShadow = Create("ImageLabel", {
-        Parent = ArrowC, BackgroundTransparency = 1, BorderSizePixel = 0,
-        AnchorPoint = Vector2.new(0.36, 0.20), Position = UDim2.new(0, 2, 0, 2),
-        Size = UDim2.new(0, 96, 0, 96), ZIndex = 100000,
-        Image = "rbxasset://textures/Cursors/KeyboardMouse/ArrowCursor.png",
-        ImageColor3 = Color3.new(0, 0, 0), ImageTransparency = 0.18,
-    })
-    local ArrowImg = Create("ImageLabel", {
-        Parent = ArrowC, BackgroundTransparency = 1, BorderSizePixel = 0,
-        AnchorPoint = Vector2.new(0.36, 0.20), Position = UDim2.new(0, 0, 0, 0),
-        Size = UDim2.new(0, 96, 0, 96), ZIndex = 100001,
-        Image = "rbxasset://textures/Cursors/KeyboardMouse/ArrowCursor.png",
-        ImageColor3 = Cur.Color,
-    })
-
-    -- Ring: halo + coloured ring + centre dot
-    local RingC = Container("Ring")
-    local RingHalo = Box(RingC, 100000, true);  Outline(RingHalo, 1, BLACK, 0.35)
-    local RingRing = Box(RingC, 100001, true);  local RingStroke = Outline(RingRing, 2, Color3.new(1, 1, 1))
-    local RingDotBg = Box(RingC, 100001, true); RingDotBg.BackgroundTransparency = 0; RingDotBg.BackgroundColor3 = BLACK
-    local RingDot = Box(RingC, 100002, true);   RingDot.BackgroundTransparency = 0
-
-    -- Crosshair: 4 arms with dark outline arms behind
-    local CrossC = Container("Crosshair")
-    local Arms, ArmsBack = {}, {}
-    for n = 1, 4 do
-        ArmsBack[n] = Box(CrossC, 100000); ArmsBack[n].BackgroundTransparency = 0.35; ArmsBack[n].BackgroundColor3 = BLACK
-        Arms[n] = Box(CrossC, 100001);     Arms[n].BackgroundTransparency = 0
-    end
-    local CrossDot = Box(CrossC, 100002, true); CrossDot.BackgroundTransparency = 0
-
-    -- Dot: solid disc with dark rim
-    local DotC = Container("Dot")
-    local DotDisc = Box(DotC, 100001, true); DotDisc.BackgroundTransparency = 0
-    Outline(DotDisc, 1.5, BLACK, 0.1)
-
-    -- Diamond: rotated square outline + centre dot
-    local DiaC = Container("Diamond")
-    local DiaHalo = Box(DiaC, 100000); DiaHalo.Rotation = 45; Outline(DiaHalo, 1, BLACK, 0.35)
-    local DiaSq = Box(DiaC, 100001);   DiaSq.Rotation = 45; local DiaStroke = Outline(DiaSq, 2, Color3.new(1, 1, 1))
-    local DiaDot = Box(DiaC, 100002, true); DiaDot.BackgroundTransparency = 0
-
-    local Containers = {Arrow = ArrowC, Ring = RingC, Crosshair = CrossC, Dot = DotC, Diamond = DiaC}
-    Library.CursorStyles = {"Arrow", "Ring", "Crosshair", "Dot", "Diamond"}
-
-    -- Fading trail, parented to the cursor GUI in screen space.
-    local TRAIL_N = 10
-    local Trail, History = {}, {}
-    for n = 1, TRAIL_N do
-        local t = Box(CursorGui, 99990, true)
-        t.BackgroundColor3 = Color3.new(1, 1, 1); t.Visible = false
-        Trail[n] = t
-    end
-
-    local pressScale, angle, mouseDown = 1, 0, false
     local pressScale, mouseDown = 1, false
     table.insert(Library.Connections, UserInputService.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 then mouseDown = true end
@@ -4138,68 +4055,9 @@ ThemeMap = {BackgroundColor3 = "AccentColor"}
         if input.UserInputType == Enum.UserInputType.MouseButton1 then mouseDown = false end
     end))
 
-    local function SetSize(f, w, h) f.Size = UDim2.new(0, w, 0, h or w) end
-
-    local function UpdateCursor(dt, mouse)
-        local color
-        if Cur.Rainbow then color = Color3.fromHSV((os.clock() * 0.35) % 1, 0.75, 1)
-        elseif Cur.UseAccent then color = Library.Theme.AccentColor
-        else color = Cur.Color end
-
     local function UpdateCursor(dt)
         local color = Cur.UseAccent and Library.Theme.AccentColor or Cur.Color
         pressScale = pressScale + ((mouseDown and 0.65 or 1) - pressScale) * math.min(1, dt * 22)
-        local sz = Cur.Size * pressScale
-        if Cur.Spin then angle = (angle + dt * 160) % 360 else angle = 0 end
-
-        for name, c in pairs(Containers) do c.Visible = (name == Cur.Style) end
-
-        if Cur.Style == "Arrow" then
-            local px = math.max(42, math.floor(sz * 6))
-            SetSize(ArrowImg, px)
-            SetSize(ArrowShadow, px + 3)
-            ArrowImg.ImageColor3 = color
-            ArrowShadow.Position = UDim2.new(0, 2, 0, 2)
-            ArrowC.Rotation = 0 -- a pointer stays upright even when Spin is enabled
-        elseif Cur.Style == "Ring" then
-            SetSize(RingHalo, sz + 4); SetSize(RingRing, sz); SetSize(RingDotBg, 8); SetSize(RingDot, 4)
-            RingStroke.Color = color; RingDot.BackgroundColor3 = color
-            RingC.Rotation = angle
-        elseif Cur.Style == "Crosshair" then
-            local len, gap, th = math.max(3, sz * 0.45), math.max(2, sz * 0.2), 2
-            local dirs = {{0, -1}, {1, 0}, {0, 1}, {-1, 0}}
-            for n, d in ipairs(dirs) do
-                local off = gap + len / 2
-                local w = d[1] ~= 0 and len or th
-                local h = d[2] ~= 0 and len or th
-                Arms[n].Size = UDim2.new(0, w, 0, h)
-                Arms[n].BackgroundColor3 = color
-                Arms[n].Position = UDim2.new(0, d[1] * off, 0, d[2] * off)
-                ArmsBack[n].Size = UDim2.new(0, w + 2, 0, h + 2)
-                ArmsBack[n].Position = Arms[n].Position
-            end
-            SetSize(CrossDot, 2); CrossDot.BackgroundColor3 = color
-            CrossC.Rotation = angle
-        elseif Cur.Style == "Dot" then
-            SetSize(DotDisc, math.max(4, sz * 0.5)); DotDisc.BackgroundColor3 = color
-        else -- Diamond
-            SetSize(DiaHalo, sz * 0.8 + 4); SetSize(DiaSq, sz * 0.8); SetSize(DiaDot, 3)
-            DiaStroke.Color = color; DiaDot.BackgroundColor3 = color
-            DiaC.Rotation = angle
-        end
-
-        -- Trail
-        if Cur.Trail then
-            table.insert(History, 1, mouse)
-            if #History > TRAIL_N then table.remove(History) end
-            for n = 1, TRAIL_N do
-                local pos, t = History[n], Trail[n]
-                if pos then
-                    t.Visible = true
-                    t.Position = UDim2.new(0, pos.X, 0, pos.Y)
-                    SetSize(t, math.max(2, (Cur.Size * 0.4) * (1 - n / (TRAIL_N + 2))))
-                    t.BackgroundColor3 = color
-                    t.BackgroundTransparency = 0.35 + 0.6 * (n / TRAIL_N)
         local scale = math.max(0.35, Cur.Size / 16) * pressScale
         local renderedHeight = 17 * scale
         -- UDim2 pixel offsets are rounded to integers; one-pixel rows avoid the
@@ -4233,9 +4091,6 @@ ThemeMap = {BackgroundColor3 = "AccentColor"}
                 row.Outline.Visible = false
                 row.Fill.Visible = false
             end
-        elseif #History > 0 then
-            table.clear(History)
-            for n = 1, TRAIL_N do Trail[n].Visible = false end
         end
     end
 
@@ -4324,10 +4179,6 @@ ThemeMap = {BackgroundColor3 = "AccentColor"}
             UserInputService.MouseIconEnabled = false
             local m = UserInputService:GetMouseLocation()
             CursorRoot.Position = UDim2.new(0, m.X, 0, m.Y)
-            UpdateCursor(dt or 0.016, m)
-        else
-            for n = 1, TRAIL_N do Trail[n].Visible = false end
-            table.clear(History)
             UpdateCursor(dt or 0.016)
         end
     end
@@ -4583,13 +4434,9 @@ ThemeMap = {BackgroundColor3 = "AccentColor"}
 
         local CursorGroup = SettingsTab:CreateGroupBox("Right", "Cursor")
         local CurCfg = Library.Cursor
-        CursorGroup:AddDropdown("Cursor Style", Library.CursorStyles, CurCfg.Style, function(v) CurCfg.Style = v end, "__CursorStyle")
         CursorGroup:AddSlider("Cursor Size", 6, 40, CurCfg.Size, function(v) CurCfg.Size = v end, "__CursorSize")
         CursorGroup:AddToggle("Use Accent Color", false, function(v) CurCfg.UseAccent = v end, "__CursorAccent")
         CursorGroup:AddColorPicker("Cursor Color", CurCfg.Color, function(c) CurCfg.Color = c end, "__CursorColor")
-        CursorGroup:AddToggle("Rainbow", false, function(v) CurCfg.Rainbow = v end, "__CursorRainbow")
-        CursorGroup:AddToggle("Spin", false, function(v) CurCfg.Spin = v end, "__CursorSpin")
-        CursorGroup:AddToggle("Trail", false, function(v) CurCfg.Trail = v end, "__CursorTrail")
 
         -- Themes + Configuration are part of the UI itself; nothing to wire up.
         Library:SetFolder(options.Folder or Title)
